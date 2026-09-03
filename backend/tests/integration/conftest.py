@@ -51,6 +51,7 @@ def point_settings_at_test_database(
     monkeypatch.setenv("DATABASE_SYNC_URL", sync_url)
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("SCAN_PROCESS_POOL_ENABLED", "false")
 
     from blade_backend.db import session as session_module  # noqa: PLC0415
     from blade_backend.settings import get_settings  # noqa: PLC0415

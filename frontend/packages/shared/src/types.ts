@@ -46,7 +46,7 @@ export interface ScanEmailPayload {
 
 export interface AttachmentUploadResult {
   attachment_scan_id: string;
-  status: "scanned" | "queued" | "failed";
+  status: "scanned" | "partial" | "queued" | "failed";
   verdict?: Verdict | null | undefined;
   error?: string | null | undefined;
 }

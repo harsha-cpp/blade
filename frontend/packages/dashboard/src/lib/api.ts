@@ -114,9 +114,7 @@ export async function request<T>(
     try {
       const data = (await res.json()) as { detail?: string | object };
       if (data.detail !== undefined) detail = data.detail;
-    } catch {
-      /* noop */
-    }
+    } catch {}
     throw new ApiError(res.status, detail);
   }
 

@@ -105,7 +105,7 @@ clean: ## Remove caches + build outputs
 	find . -type d -name "dist" -prune -exec rm -rf {} +
 
 # ---------------------------------------------------------------------------
-# Deployment — images and the production stack. See docs/deployment.md.
+# Deployment - images and the production stack. See docs/deployment.md.
 # ---------------------------------------------------------------------------
 
 images: images-api images-worker images-dashboard ## Build all three deployment images

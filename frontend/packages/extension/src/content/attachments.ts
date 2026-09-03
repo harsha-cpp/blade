@@ -40,7 +40,13 @@ async function extractPdf(file: File): Promise<string> {
 export interface AttachmentScanResult {
   filename: string;
   entities: EntityHit[];
+  unscanned: boolean;
   error?: string;
+}
+
+export interface AttachmentSweep {
+  entities: EntityHit[];
+  unscanned: number;
 }
 
 export interface AttachmentUrlRef {
@@ -49,41 +55,52 @@ export interface AttachmentUrlRef {
   mimeType?: string | undefined;
 }
 
-async function extractText(file: File): Promise<string> {
-  const name = file.name.toLowerCase();
-  const type = (file.type || "").toLowerCase();
-  if (
-    type === "text/plain" ||
-    name.endsWith(".txt") ||
-    name.endsWith(".csv") ||
-    name.endsWith(".log")
-  ) {
-    return extractTxt(file);
+interface LocalExtraction {
+  text: string;
+  complete: boolean;
+}
+
+async function extractText(file: File): Promise<LocalExtraction> {
+  if (isPlainText(file)) {
+    return { text: await extractTxt(file), complete: true };
   }
-  if (type === "application/pdf" || name.endsWith(".pdf")) {
-    return extractPdf(file);
+  if (isPdf(file)) {
+    const text = await extractPdf(file);
+    return { text, complete: text.trim().length > 0 };
   }
-  return "";
+  return { text: "", complete: false };
 }
 
 export async function scanAttachment(
   file: File,
 ): Promise<AttachmentScanResult> {
+  if (!isScannable(file)) {
+    return { filename: file.name, entities: [], unscanned: true };
+  }
   try {
-    const text = await extractText(file);
-    if (!text) return { filename: file.name, entities: [] };
-    const entities = detectPhi(text, "attachment", file.name);
-    return { filename: file.name, entities };
+    const extraction = await extractText(file);
+    const entities = extraction.text
+      ? detectPhi(extraction.text, "attachment", file.name)
+      : [];
+    return { filename: file.name, entities, unscanned: !extraction.complete };
   } catch (err) {
     console.error(`[Blade] Attachment scan FAILED for ${file.name}:`, err);
-    return { filename: file.name, entities: [], error: (err as Error).message };
+    return {
+      filename: file.name,
+      entities: [],
+      unscanned: true,
+      error: (err as Error).message,
+    };
   }
 }
 
-export async function scanAttachments(files: File[]): Promise<EntityHit[]> {
-  if (files.length === 0) return [];
+export async function scanAttachments(files: File[]): Promise<AttachmentSweep> {
+  if (files.length === 0) return { entities: [], unscanned: 0 };
   const results = await Promise.all(files.map(scanAttachment));
-  return results.flatMap((r) => r.entities);
+  return {
+    entities: results.flatMap((r) => r.entities),
+    unscanned: results.filter((r) => r.unscanned).length,
+  };
 }
 
 async function fetchAttachmentRef(
@@ -133,16 +150,24 @@ export async function fetchAttachmentRefs(
 
 const MAX_BYTES = 25 * 1024 * 1024;
 
-export function isScannable(file: File): boolean {
-  if (file.size > MAX_BYTES) return false;
+function isPlainText(file: File): boolean {
   const name = file.name.toLowerCase();
-  const type = (file.type || "").toLowerCase();
   return (
-    type === "text/plain" ||
-    type === "application/pdf" ||
+    (file.type || "").toLowerCase() === "text/plain" ||
     name.endsWith(".txt") ||
     name.endsWith(".csv") ||
-    name.endsWith(".log") ||
-    name.endsWith(".pdf")
+    name.endsWith(".log")
   );
+}
+
+function isPdf(file: File): boolean {
+  return (
+    (file.type || "").toLowerCase() === "application/pdf" ||
+    file.name.toLowerCase().endsWith(".pdf")
+  );
+}
+
+export function isScannable(file: File): boolean {
+  if (file.size > MAX_BYTES) return false;
+  return isPlainText(file) || isPdf(file);
 }

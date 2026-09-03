@@ -39,11 +39,19 @@ import {
   ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
   ATTACHMENT_POLL_TIMEOUT_MS,
   ATTACHMENT_UPLOAD_TIMEOUT_MS,
-  BACKEND_URL,
   FINALIZE_TIMEOUT_MS,
   SCAN_BUDGET_MS,
   VERDICT_CACHE_TTL_MS,
 } from "../config";
+import {
+  sendBackendRequest,
+  sendBackendRequestAndForget,
+} from "../backend-client";
+import {
+  ATTACHMENT_INLINE_MAX_BYTES,
+  BACKEND_REQUEST_MESSAGE,
+  encodeBase64,
+} from "../messages";
 
 let orgCode: string | null = null;
 let policy: OrgPolicy = emptyPolicy();
@@ -228,33 +236,22 @@ function reportEvent(
 ): void {
   if (!orgCode) return;
 
-  const payload = {
-    org_code: orgCode,
-    client_event_id: verdict.scan_id,
-    ...(userEmail ? { user_email: userEmail } : {}),
+  sendBackendRequestAndForget({
+    type: BACKEND_REQUEST_MESSAGE,
+    kind: "event",
+    timeoutMs: FINALIZE_TIMEOUT_MS,
+    clientEventId: verdict.scan_id,
+    userEmail: userEmail ?? null,
     action: verdict.action,
     severity: verdict.severity,
-    risk_score: verdict.risk_score,
+    riskScore: verdict.risk_score,
     entities: verdict.entities.map((e) => ({
       type: e.type,
       confidence: e.confidence,
     })),
     recipients,
     timestamp: verdict.created_at,
-  };
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FINALIZE_TIMEOUT_MS);
-  fetch(`${BACKEND_URL}/api/v1/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: controller.signal,
-  })
-    .catch(() => {
-      /* analytics best-effort */
-    })
-    .finally(() => clearTimeout(timer));
+  });
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -267,67 +264,41 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function fetchJson<T>(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<T> {
-  const controller = new AbortController();
-  if (signal?.aborted) controller.abort();
-  const abort = (): void => controller.abort();
-  signal?.addEventListener("abort", abort);
-  const timer = setTimeout(abort, timeoutMs);
-  try {
-    const res = await fetch(url, { ...init, signal: controller.signal });
-    const body = (await res.json().catch(() => null)) as unknown;
-    if (!res.ok) {
-      const detail =
-        body && typeof body === "object" && "detail" in body
-          ? String(body.detail)
-          : res.statusText;
-      throw new Error(detail);
-    }
-    return body as T;
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", abort);
-  }
-}
-
 async function uploadAttachmentForBackend(
-  normalizedOrgCode: string,
   clientScanId: string,
   file: File,
   signal: AbortSignal,
 ): Promise<AttachmentUploadResult> {
-  const form = new FormData();
-  form.append("org_code", normalizedOrgCode);
-  form.append("client_scan_id", clientScanId);
-  form.append("attachment_id", crypto.randomUUID());
-  form.append("file", file);
-  return fetchJson<AttachmentUploadResult>(
-    `${BACKEND_URL}/api/v1/scan/attachment`,
-    { method: "POST", body: form },
-    ATTACHMENT_UPLOAD_TIMEOUT_MS,
+  const dataBase64 = encodeBase64(new Uint8Array(await file.arrayBuffer()));
+  return sendBackendRequest<AttachmentUploadResult>(
+    {
+      type: BACKEND_REQUEST_MESSAGE,
+      kind: "attachment-upload",
+      timeoutMs: ATTACHMENT_UPLOAD_TIMEOUT_MS,
+      clientScanId,
+      attachmentId: crypto.randomUUID(),
+      filename: file.name || "attachment",
+      mimeType: file.type || "application/octet-stream",
+      dataBase64,
+    },
     signal,
   );
 }
 
 async function pollAttachmentScan(
-  normalizedOrgCode: string,
   attachmentScanId: string,
   signal: AbortSignal,
 ): Promise<AttachmentUploadResult> {
   const deadline = Date.now() + ATTACHMENT_POLL_TIMEOUT_MS;
   let latest: AttachmentUploadResult | null = null;
   while (Date.now() < deadline && !signal.aborted) {
-    latest = await fetchJson<AttachmentUploadResult>(
-      `${BACKEND_URL}/api/v1/scan/attachment/${encodeURIComponent(
+    latest = await sendBackendRequest<AttachmentUploadResult>(
+      {
+        type: BACKEND_REQUEST_MESSAGE,
+        kind: "attachment-status",
+        timeoutMs: ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
         attachmentScanId,
-      )}?org_code=${encodeURIComponent(normalizedOrgCode)}`,
-      { method: "GET" },
-      ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
+      },
       signal,
     );
     if (latest.status !== "queued") return latest;
@@ -338,7 +309,6 @@ async function pollAttachmentScan(
 
 async function finalizeWithBackend(
   payload: {
-    orgCode: string;
     clientScanId: string;
     subject: string;
     body: string;
@@ -348,22 +318,18 @@ async function finalizeWithBackend(
   },
   signal: AbortSignal,
 ): Promise<Verdict> {
-  return fetchJson<Verdict>(
-    `${BACKEND_URL}/api/v1/scan/finalize`,
+  return sendBackendRequest<Verdict>(
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        org_code: payload.orgCode,
-        client_scan_id: payload.clientScanId,
-        subject: payload.subject,
-        body: payload.body,
-        recipients: payload.recipients,
-        ...(payload.userEmail ? { user_email: payload.userEmail } : {}),
-        attachment_scan_ids: payload.attachmentScanIds,
-      }),
+      type: BACKEND_REQUEST_MESSAGE,
+      kind: "scan-finalize",
+      timeoutMs: FINALIZE_TIMEOUT_MS,
+      clientScanId: payload.clientScanId,
+      subject: payload.subject,
+      body: payload.body,
+      recipients: payload.recipients,
+      userEmail: payload.userEmail ?? null,
+      attachmentScanIds: payload.attachmentScanIds,
     },
-    FINALIZE_TIMEOUT_MS,
     signal,
   );
 }
@@ -380,7 +346,6 @@ async function scanWithBackend(
   progress: ScanProgress,
 ): Promise<Verdict> {
   if (!orgCode) throw new Error("missing org code");
-  const normalizedOrgCode = orgCode.trim().toUpperCase();
   const clientScanId = crypto.randomUUID();
 
   const total = input.attachments.length;
@@ -390,7 +355,6 @@ async function scanWithBackend(
   const uploaded = await Promise.all(
     input.attachments.map(async (file) => {
       const result = await uploadAttachmentForBackend(
-        normalizedOrgCode,
         clientScanId,
         file,
         signal,
@@ -404,7 +368,7 @@ async function scanWithBackend(
   const resolved = await Promise.all(
     uploaded.map((scan) =>
       scan.status === "queued"
-        ? pollAttachmentScan(normalizedOrgCode, scan.attachment_scan_id, signal)
+        ? pollAttachmentScan(scan.attachment_scan_id, signal)
         : Promise.resolve(scan),
     ),
   );
@@ -412,7 +376,6 @@ async function scanWithBackend(
   progress.setStep("Checking against your organization policy...");
   return finalizeWithBackend(
     {
-      orgCode: normalizedOrgCode,
       clientScanId,
       subject: input.subject,
       body: input.body,
@@ -427,18 +390,19 @@ async function scanWithBackend(
 async function buildLocalFallbackVerdict(
   data: ComposeData,
   files: File[],
-  unscannedAttachments: number,
+  unreachableAttachments: number,
 ): Promise<Verdict> {
+  const sweep = await scanAttachments(files);
   const entities: EntityHit[] = [
     ...detectPhi(`${data.subject}\n${data.body}`, "body"),
-    ...(await scanAttachments(files)),
+    ...sweep.entities,
   ];
   return degradedVerdict(
     buildLocalVerdict({
       entities,
       recipients: data.recipients,
       policy,
-      unscannedAttachments,
+      unscannedAttachments: unreachableAttachments + sweep.unscanned,
     }),
   );
 }
@@ -682,6 +646,11 @@ async function handleSendIntercept(
       unscanned = fetched.failed;
     }
 
+    const uploadable = files.filter(
+      (file) => file.size <= ATTACHMENT_INLINE_MAX_BYTES,
+    );
+    const tooLargeToUpload = files.length - uploadable.length;
+
     try {
       verdict = await scanWithBackend(
         {
@@ -689,12 +658,12 @@ async function handleSendIntercept(
           body: data.body,
           recipients: data.recipients,
           userEmail: data.userEmail,
-          attachments: files,
+          attachments: uploadable,
         },
         controller.signal,
         progress,
       );
-      verdict = withUnscannedAttachments(verdict, unscanned);
+      verdict = withUnscannedAttachments(verdict, unscanned + tooLargeToUpload);
     } catch (err) {
       if (cancelled) return;
       console.warn("[Blade] backend scan unavailable, deciding locally", err);

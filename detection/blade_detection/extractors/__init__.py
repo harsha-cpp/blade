@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import zipfile
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from email import message_from_bytes
 from email.policy import default as default_email_policy
 from importlib import import_module
@@ -13,6 +14,8 @@ import structlog
 from PIL import Image
 
 from blade_detection.extractors import docx, image, pdf, pptx, text, xlsx
+from blade_detection.extractors.budget import ExtractionBudget
+from blade_detection.extractors.issues import ExtractionIssue, unique_issues
 from blade_detection.models import Attachment
 
 logger = structlog.get_logger(__name__)
@@ -23,9 +26,9 @@ PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presen
 XLS_MIME = "application/vnd.ms-excel"
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-MAX_ARCHIVE_UNPACKED_BYTES = 64 * 1024 * 1024
-MAX_ARCHIVE_MEMBERS = 50
 MAX_EMBEDDED_DEPTH = 2
+CONTAINER_KINDS = frozenset({"archive", "email"})
+OCR_CAPABLE_KINDS = frozenset({"pdf", "docx", "image", "archive", "email"})
 
 _EXTENSION_KINDS: dict[str, str] = {
     ".pdf": "pdf",
@@ -58,27 +61,103 @@ class _MagicModule(Protocol):
     def from_buffer(self, buffer: bytes, *, mime: bool) -> str: ...
 
 
+@dataclass(frozen=True, slots=True)
+class OcrImageSource:
+    load: Callable[[], Image.Image | None]
+    unreadable_issue: str
+
+
+def _no_sources() -> list[OcrImageSource]:
+    return []
+
+
+def _no_errors() -> list[str]:
+    return []
+
+
 @dataclass(frozen=True)
 class ExtractionResult:
     text: str
-    ocr_images: list[Image.Image]
-    errors: list[str]
+    ocr_sources: list[OcrImageSource] = field(default_factory=_no_sources)
+    errors: list[str] = field(default_factory=_no_errors)
 
 
-def extract_attachment(attachment: Attachment) -> ExtractionResult:
+def _errors(attachment_id: str, issues: Iterable[str]) -> list[str]:
+    return [f"{attachment_id}: {issue}" for issue in unique_issues(issues)]
+
+
+def _append_chunk(chunks: list[str], budget: ExtractionBudget, chunk: str) -> None:
+    if not chunk:
+        return
+    if chunks:
+        chunks.append(budget.take_characters("\n"))
+    chunks.append(chunk)
+
+
+def _ready_source(loaded: Image.Image) -> OcrImageSource:
+    return OcrImageSource(
+        load=lambda: loaded,
+        unreadable_issue=ExtractionIssue.IMAGE_UNREADABLE,
+    )
+
+
+def _budget_can_serve(kind: str, budget: ExtractionBudget) -> bool:
+    if budget.characters > 0:
+        return True
+    return budget.ocr_images > 0 and kind in OCR_CAPABLE_KINDS
+
+
+def _within_budget(
+    result: ExtractionResult,
+    budget: ExtractionBudget,
+    attachment_id: str,
+) -> ExtractionResult:
+    kept_text = budget.take_characters(result.text)
+    allowed_images = budget.take_ocr_images(len(result.ocr_sources))
+    issues: list[str] = []
+    if len(kept_text) < len(result.text):
+        logger.warning("extraction character budget exhausted", attachment_id=attachment_id)
+        issues.append(ExtractionIssue.EXTRACTION_CHAR_LIMIT)
+    if allowed_images < len(result.ocr_sources):
+        logger.warning("ocr image budget exhausted", attachment_id=attachment_id)
+        issues.append(ExtractionIssue.OCR_IMAGE_LIMIT)
+    if not issues:
+        return result
+    return ExtractionResult(
+        kept_text,
+        result.ocr_sources[:allowed_images],
+        [*result.errors, *_errors(attachment_id, issues)],
+    )
+
+
+def extract_attachment(
+    attachment: Attachment,
+    *,
+    budget: ExtractionBudget | None = None,
+) -> ExtractionResult:
     if attachment.local_path is None:
-        return ExtractionResult("", [], [f"{attachment.id}: missing local path"])
+        return ExtractionResult(
+            "", [], _errors(attachment.id, [ExtractionIssue.MISSING_LOCAL_PATH])
+        )
 
     path = Path(attachment.local_path)
     try:
         if path.stat().st_size > MAX_ATTACHMENT_BYTES:
-            return ExtractionResult("", [], [f"{attachment.id}: attachment too large"])
+            return ExtractionResult(
+                "", [], _errors(attachment.id, [ExtractionIssue.ATTACHMENT_TOO_LARGE])
+            )
         data = path.read_bytes()
     except OSError:
         logger.warning("attachment read failed", attachment_id=attachment.id)
-        return ExtractionResult("", [], [f"{attachment.id}: read failed"])
+        return ExtractionResult("", [], _errors(attachment.id, [ExtractionIssue.READ_FAILED]))
 
-    return extract_bytes(data, attachment.filename, attachment.mime_type, attachment.id)
+    return extract_bytes(
+        data,
+        attachment.filename,
+        attachment.mime_type,
+        attachment.id,
+        budget=budget,
+    )
 
 
 def extract_bytes(
@@ -88,7 +167,9 @@ def extract_bytes(
     attachment_id: str,
     *,
     depth: int = 0,
+    budget: ExtractionBudget | None = None,
 ) -> ExtractionResult:
+    remaining = budget if budget is not None else ExtractionBudget()
     kind = _classify(data, filename, declared_mime)
     if kind is None:
         logger.warning(
@@ -97,13 +178,29 @@ def extract_bytes(
             filename=filename,
             mime_type=declared_mime,
         )
-        return ExtractionResult("", [], [f"{attachment_id}: unsupported file type"])
+        return ExtractionResult(
+            "", [], _errors(attachment_id, [ExtractionIssue.UNSUPPORTED_FILE_TYPE])
+        )
+
+    if not _budget_can_serve(kind, remaining):
+        logger.warning(
+            "extraction budget exhausted before attachment",
+            attachment_id=attachment_id,
+            kind=kind,
+        )
+        return ExtractionResult(
+            "", [], _errors(attachment_id, [ExtractionIssue.EXTRACTION_BUDGET_EXHAUSTED])
+        )
 
     try:
-        return _extract_kind(kind, data, filename, attachment_id, depth)
+        result = _extract_kind(kind, data, filename, attachment_id, depth, remaining)
     except Exception:
         logger.warning("attachment extraction failed", attachment_id=attachment_id, kind=kind)
-        return ExtractionResult("", [], [f"{attachment_id}: extraction failed"])
+        return ExtractionResult("", [], _errors(attachment_id, [ExtractionIssue.EXTRACTION_FAILED]))
+
+    if kind in CONTAINER_KINDS:
+        return result
+    return _within_budget(result, remaining, attachment_id)
 
 
 def _extract_kind(
@@ -112,33 +209,53 @@ def _extract_kind(
     filename: str,
     attachment_id: str,
     depth: int,
+    budget: ExtractionBudget,
 ) -> ExtractionResult:
     if kind == "pdf":
-        pages = pdf.extract_pages(data)
+        document = pdf.extract_pages(data)
         return ExtractionResult(
-            text="\n".join(page.text for page in pages if page.text),
-            ocr_images=[page.ocr_image for page in pages if page.ocr_image is not None],
-            errors=[],
+            text="\n".join(page.text for page in document.pages if page.text),
+            ocr_sources=[
+                OcrImageSource(
+                    load=page.render_ocr_image,
+                    unreadable_issue=ExtractionIssue.PDF_RENDER_FAILED,
+                )
+                for page in document.pages
+                if page.render_ocr_image is not None
+            ],
+            errors=_errors(attachment_id, document.issues),
         )
     if kind == "docx":
         content = docx.extract(data)
-        return ExtractionResult(content.text, content.images, [])
+        return ExtractionResult(
+            content.text,
+            [_ready_source(embedded) for embedded in content.images],
+            _errors(attachment_id, content.issues),
+        )
     if kind == "xlsx":
-        return ExtractionResult(xlsx.extract_text(data), [], [])
+        workbook = xlsx.extract(data)
+        return ExtractionResult(workbook.text, [], _errors(attachment_id, workbook.issues))
     if kind == "pptx":
-        return ExtractionResult(pptx.extract_text(data), [], [])
+        presentation = pptx.extract(data)
+        return ExtractionResult(presentation.text, [], _errors(attachment_id, presentation.issues))
     if kind == "text":
-        return ExtractionResult(text.extract_text(data, filename=filename), [], [])
+        plain = text.extract(data, filename=filename)
+        return ExtractionResult(plain.text, [], _errors(attachment_id, plain.issues))
     if kind == "rtf":
-        return ExtractionResult(text.extract_rtf(data), [], [])
+        rich = text.extract_rtf(data)
+        return ExtractionResult(rich.text, [], _errors(attachment_id, rich.issues))
     if kind == "image":
         opened = image.open_image(data)
-        return ExtractionResult("", [opened] if opened is not None else [], [])
+        return ExtractionResult(
+            "",
+            [_ready_source(opened.image)] if opened.image is not None else [],
+            _errors(attachment_id, opened.issues),
+        )
     if kind == "email":
-        return _extract_email(data, attachment_id, depth)
+        return _extract_email(data, attachment_id, depth, budget)
     if kind == "archive":
-        return _extract_archive(data, attachment_id, depth)
-    return ExtractionResult("", [], [f"{attachment_id}: unsupported file type"])
+        return _extract_archive(data, attachment_id, depth, budget)
+    return ExtractionResult("", [], _errors(attachment_id, [ExtractionIssue.UNSUPPORTED_FILE_TYPE]))
 
 
 _SIGNATURES: tuple[tuple[bytes, str], ...] = (
@@ -255,19 +372,31 @@ def _detect_mime(data: bytes, fallback: str) -> str:
         return fallback
 
 
-def _extract_email(data: bytes, attachment_id: str, depth: int) -> ExtractionResult:
+def _extract_email(
+    data: bytes,
+    attachment_id: str,
+    depth: int,
+    budget: ExtractionBudget,
+) -> ExtractionResult:
     if depth >= MAX_EMBEDDED_DEPTH:
-        return ExtractionResult("", [], [f"{attachment_id}: embedded depth limit"])
+        return ExtractionResult(
+            "", [], _errors(attachment_id, [ExtractionIssue.EMBEDDED_DEPTH_LIMIT])
+        )
 
     message = message_from_bytes(data, policy=default_email_policy)
     chunks: list[str] = []
-    images: list[Image.Image] = []
+    sources: list[OcrImageSource] = []
     errors: list[str] = []
 
-    for header in ("subject", "from", "to", "cc"):
-        value = message.get(header)
-        if value:
-            chunks.append(f"{header}: {value}")
+    headers = "\n".join(
+        f"{header}: {message.get(header)}"
+        for header in ("subject", "from", "to", "cc")
+        if message.get(header)
+    )
+    kept_headers = budget.take_characters(headers)
+    _append_chunk(chunks, budget, kept_headers)
+    if len(kept_headers) < len(headers):
+        errors.extend(_errors(attachment_id, [ExtractionIssue.EXTRACTION_CHAR_LIMIT]))
 
     for part in message.walk():
         if part.is_multipart():
@@ -275,58 +404,91 @@ def _extract_email(data: bytes, attachment_id: str, depth: int) -> ExtractionRes
         payload = part.get_payload(decode=True)
         if not isinstance(payload, bytes):
             continue
+        if budget.characters <= 0:
+            logger.warning("email character budget exhausted", attachment_id=attachment_id)
+            errors.extend(_errors(attachment_id, [ExtractionIssue.EXTRACTION_CHAR_LIMIT]))
+            break
+        if not budget.take_member():
+            logger.warning("email part budget exhausted", attachment_id=attachment_id)
+            errors.extend(_errors(attachment_id, [ExtractionIssue.EMAIL_PART_LIMIT]))
+            break
+        if not budget.take_bytes(len(payload)):
+            logger.warning("email unpack budget exhausted", attachment_id=attachment_id)
+            errors.extend(_errors(attachment_id, [ExtractionIssue.EMAIL_UNPACK_LIMIT]))
+            break
         content_type = part.get_content_type()
         filename = part.get_filename() or ""
+        part_id = f"{attachment_id}:{filename or content_type}"
         if content_type in {"text/plain", "text/html"} and not filename:
-            chunks.append(text.decode(payload))
+            decoded = text.decode(payload)
+            kept = budget.take_characters(decoded)
+            _append_chunk(chunks, budget, kept)
+            if len(kept) < len(decoded):
+                errors.extend(_errors(part_id, [ExtractionIssue.EXTRACTION_CHAR_LIMIT]))
             continue
         nested = extract_bytes(
             payload,
             filename,
             content_type,
-            f"{attachment_id}:{filename or content_type}",
+            part_id,
             depth=depth + 1,
+            budget=budget,
         )
-        if nested.text:
-            chunks.append(nested.text)
-        images.extend(nested.ocr_images)
+        _append_chunk(chunks, budget, nested.text)
+        sources.extend(nested.ocr_sources)
         errors.extend(nested.errors)
 
-    return ExtractionResult("\n".join(chunks), images, errors)
+    return ExtractionResult("".join(chunks), sources, errors)
 
 
-def _extract_archive(data: bytes, attachment_id: str, depth: int) -> ExtractionResult:
+def _extract_archive(
+    data: bytes,
+    attachment_id: str,
+    depth: int,
+    budget: ExtractionBudget,
+) -> ExtractionResult:
     if depth >= MAX_EMBEDDED_DEPTH:
-        return ExtractionResult("", [], [f"{attachment_id}: embedded depth limit"])
+        return ExtractionResult(
+            "", [], _errors(attachment_id, [ExtractionIssue.EMBEDDED_DEPTH_LIMIT])
+        )
 
     chunks: list[str] = []
-    images: list[Image.Image] = []
+    sources: list[OcrImageSource] = []
     errors: list[str] = []
-    unpacked = 0
 
     with zipfile.ZipFile(BytesIO(data)) as archive:
-        for info in archive.infolist()[:MAX_ARCHIVE_MEMBERS]:
+        for info in archive.infolist():
             if info.is_dir():
                 continue
-            if unpacked + info.file_size > MAX_ARCHIVE_UNPACKED_BYTES:
-                errors.append(f"{attachment_id}: archive unpack limit reached")
+            if budget.characters <= 0:
+                logger.warning("archive character budget exhausted", attachment_id=attachment_id)
+                errors.extend(_errors(attachment_id, [ExtractionIssue.EXTRACTION_CHAR_LIMIT]))
+                break
+            if not budget.take_member():
+                logger.warning("archive member budget exhausted", attachment_id=attachment_id)
+                errors.extend(_errors(attachment_id, [ExtractionIssue.ARCHIVE_MEMBER_LIMIT]))
+                break
+            if not budget.take_bytes(info.file_size):
+                logger.warning("archive unpack budget exhausted", attachment_id=attachment_id)
+                errors.extend(_errors(attachment_id, [ExtractionIssue.ARCHIVE_UNPACK_LIMIT]))
                 break
             try:
                 member = archive.read(info)
             except Exception:
-                errors.append(f"{attachment_id}: could not read {info.filename}")
+                errors.append(
+                    f"{attachment_id}: {ExtractionIssue.ARCHIVE_MEMBER_UNREADABLE}: {info.filename}"
+                )
                 continue
-            unpacked += len(member)
             nested = extract_bytes(
                 member,
                 info.filename,
                 "application/octet-stream",
                 f"{attachment_id}:{info.filename}",
                 depth=depth + 1,
+                budget=budget,
             )
-            if nested.text:
-                chunks.append(nested.text)
-            images.extend(nested.ocr_images)
+            _append_chunk(chunks, budget, nested.text)
+            sources.extend(nested.ocr_sources)
             errors.extend(nested.errors)
 
-    return ExtractionResult("\n".join(chunks), images, errors)
+    return ExtractionResult("".join(chunks), sources, errors)

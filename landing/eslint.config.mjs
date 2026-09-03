@@ -7,8 +7,8 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     rules: {
-      // Static SVG/PNG assets are served as-is; next/image adds nothing here.
       "@next/next/no-img-element": "off",
+      "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
   globalIgnores(["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"]),

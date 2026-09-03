@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from importlib import import_module
 from io import BytesIO
 from typing import Any, Protocol, cast
 
 import structlog
 
+from blade_detection.extractors.issues import ExtractionIssue, no_issues, unique_issues
 from blade_detection.extractors.tabular import render_rows
 
 logger = structlog.get_logger(__name__)
@@ -25,14 +27,20 @@ class _Workbook(Protocol):
     def close(self) -> None: ...
 
 
-def extract_text(data: bytes) -> str:
-    text = _extract_xlsx(data)
-    if text:
-        return text
+@dataclass(frozen=True, slots=True)
+class WorkbookContent:
+    text: str
+    issues: list[str] = field(default_factory=no_issues)
+
+
+def extract(data: bytes) -> WorkbookContent:
+    primary = _extract_xlsx(data)
+    if ExtractionIssue.SPREADSHEET_OPEN_FAILED not in primary.issues:
+        return primary
     return _extract_xls(data)
 
 
-def _extract_xlsx(data: bytes) -> str:
+def _extract_xlsx(data: bytes) -> WorkbookContent:
     try:
         openpyxl = cast(Any, import_module("openpyxl"))
         workbook = cast(
@@ -40,9 +48,11 @@ def _extract_xlsx(data: bytes) -> str:
             openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True),
         )
     except Exception:
-        return ""
+        logger.warning("xlsx attachment open failed")
+        return WorkbookContent("", [ExtractionIssue.SPREADSHEET_OPEN_FAILED])
 
     chunks: list[str] = []
+    issues: list[str] = []
     try:
         cells = 0
         total = 0
@@ -53,29 +63,33 @@ def _extract_xlsx(data: bytes) -> str:
                 cells += len(values)
                 if cells > MAX_CELLS:
                     logger.warning("xlsx cell limit reached", max_cells=MAX_CELLS)
+                    issues.append(ExtractionIssue.SPREADSHEET_CELL_LIMIT)
                     break
                 rows.append(values)
             for line in render_rows(rows):
                 total = _append(chunks, line, total)
                 if total >= MAX_EXTRACTED_CHARS:
                     logger.warning("xlsx text limit reached")
-                    return "\n".join(chunks)
+                    issues.append(ExtractionIssue.TEXT_LIMIT)
+                    return WorkbookContent("\n".join(chunks), unique_issues(issues))
     except Exception:
         logger.warning("xlsx attachment extraction failed")
+        issues.append(ExtractionIssue.SPREADSHEET_UNREADABLE)
     finally:
         workbook.close()
-    return "\n".join(chunks)
+    return WorkbookContent("\n".join(chunks), unique_issues(issues))
 
 
-def _extract_xls(data: bytes) -> str:
+def _extract_xls(data: bytes) -> WorkbookContent:
     try:
         xlrd = cast(Any, import_module("xlrd"))
         book = xlrd.open_workbook(file_contents=data)
     except Exception:
         logger.warning("xls attachment open failed")
-        return ""
+        return WorkbookContent("", [ExtractionIssue.SPREADSHEET_OPEN_FAILED])
 
     chunks: list[str] = []
+    issues: list[str] = []
     try:
         cells = 0
         total = 0
@@ -85,15 +99,18 @@ def _extract_xls(data: bytes) -> str:
                 values = [str(value) for value in sheet.row_values(row_index)]
                 cells += len(values)
                 if cells > MAX_CELLS:
+                    issues.append(ExtractionIssue.SPREADSHEET_CELL_LIMIT)
                     break
                 rows.append(values)
             for line in render_rows(rows):
                 total = _append(chunks, line, total)
                 if total >= MAX_EXTRACTED_CHARS:
-                    return "\n".join(chunks)
+                    issues.append(ExtractionIssue.TEXT_LIMIT)
+                    return WorkbookContent("\n".join(chunks), unique_issues(issues))
     except Exception:
         logger.warning("xls attachment extraction failed")
-    return "\n".join(chunks)
+        issues.append(ExtractionIssue.SPREADSHEET_UNREADABLE)
+    return WorkbookContent("\n".join(chunks), unique_issues(issues))
 
 
 def _append(chunks: list[str], value: str, total: int) -> int:

@@ -7,14 +7,113 @@ from collections.abc import Awaitable, Callable
 from typing import cast
 
 from redis.asyncio import Redis
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from blade_backend.settings import get_settings
 
 _UNKNOWN_CLIENT = "unknown"
+
+ATTACHMENT_UPLOAD_PATH = "/api/v1/scan/attachment"
+MULTIPART_ENVELOPE_BYTES = 64 * 1024
+
+
+def request_body_limit(path: str) -> int:
+    settings = get_settings()
+    if path.rstrip("/") == ATTACHMENT_UPLOAD_PATH:
+        return settings.scan_max_attachment_bytes + MULTIPART_ENVELOPE_BYTES
+    return settings.api_max_request_bytes
+
+
+def _declared_body_size(scope: Scope) -> int | None:
+    raw = Headers(scope=scope).get("content-length")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _too_large_response(limit: int) -> JSONResponse:
+    return JSONResponse({"detail": "request body too large", "max_bytes": limit}, status_code=413)
+
+
+class _BodySizeGuard:
+    def __init__(self, receive: Receive, limit: int) -> None:
+        self._receive = receive
+        self._limit = limit
+        self._received = 0
+        self.exceeded = False
+
+    async def receive(self) -> Message:
+        if self.exceeded:
+            return {"type": "http.disconnect"}
+        message = await self._receive()
+        if message["type"] != "http.request":
+            return message
+        self._received += len(cast(bytes, message.get("body", b"")))
+        if self._received <= self._limit:
+            return message
+        self.exceeded = True
+        return {"type": "http.disconnect"}
+
+
+class _RejectingSend:
+    def __init__(self, send: Send, guard: _BodySizeGuard, rejection: JSONResponse) -> None:
+        self._send = send
+        self._guard = guard
+        self._rejection = rejection
+        self._rejection_sent = False
+        self.started = False
+
+    async def send(self, message: Message) -> None:
+        if not self._guard.exceeded:
+            self.started = self.started or message["type"] == "http.response.start"
+            await self._send(message)
+            return
+        if message["type"] == "http.response.start":
+            self.started = True
+            await self._send(
+                {
+                    "type": "http.response.start",
+                    "status": self._rejection.status_code,
+                    "headers": self._rejection.raw_headers,
+                }
+            )
+            return
+        if message["type"] == "http.response.body" and not self._rejection_sent:
+            self._rejection_sent = True
+            await self._send({"type": "http.response.body", "body": self._rejection.body})
+
+
+class RequestSizeLimitMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        limit = request_body_limit(str(scope.get("path", "")))
+        rejection = _too_large_response(limit)
+        declared = _declared_body_size(scope)
+        if declared is not None and declared > limit:
+            await rejection(scope, receive, send)
+            return
+
+        guard = _BodySizeGuard(receive, limit)
+        response = _RejectingSend(send, guard, rejection)
+        try:
+            await self.app(scope, guard.receive, response.send)
+        except Exception:
+            if response.started or not guard.exceeded:
+                raise
+            await rejection(scope, receive, send)
 
 
 def resolve_client_ip(request: Request, trusted_proxy_count: int) -> str:

@@ -5,10 +5,18 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
+from argon2 import PasswordHasher
+from argon2.low_level import Type
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from blade_backend.auth.tokens import DEVICE_TOKEN_PREFIX, issue_token
+from blade_backend.auth.tokens import (
+    DEVICE_TOKEN_PREFIX,
+    is_legacy_token_hash,
+    issue_token,
+    parse_token,
+    verify_token_secret,
+)
 from blade_backend.db.models import DeviceToken
 from blade_backend.deps import current_device
 
@@ -122,3 +130,50 @@ async def test_stale_last_seen_is_refreshed() -> None:
     await current_device(_as_session(session), raw_token)
 
     assert session.commits == 1
+
+
+def _argon2_hash(secret: str) -> bytes:
+    return PasswordHasher(type=Type.ID).hash(secret).encode("utf-8")
+
+
+@pytest.mark.unit
+async def test_a_device_stored_as_argon2_still_authenticates_and_is_upgraded() -> None:
+    raw_token, device = _device(last_seen_at=datetime.now(UTC))
+    _device_id, secret = parse_token(DEVICE_TOKEN_PREFIX, raw_token)
+    device.token_hash = _argon2_hash(secret)
+    session = _FakeSession(device)
+
+    principal = await current_device(_as_session(session), raw_token)
+
+    assert principal.org_id == device.org_id
+    assert session.commits == 1
+    assert is_legacy_token_hash(device.token_hash) is False
+    assert verify_token_secret(secret, device.token_hash) is True
+
+
+@pytest.mark.unit
+async def test_a_revoked_device_stored_as_argon2_is_refused_without_being_upgraded() -> None:
+    raw_token, device = _device(revoked_at=datetime.now(UTC))
+    _device_id, secret = parse_token(DEVICE_TOKEN_PREFIX, raw_token)
+    legacy_hash = _argon2_hash(secret)
+    device.token_hash = legacy_hash
+    session = _FakeSession(device)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await current_device(_as_session(session), raw_token)
+
+    assert exc_info.value.status_code == 401
+    assert device.token_hash == legacy_hash
+    assert session.commits == 0
+
+
+@pytest.mark.unit
+async def test_a_wrong_secret_against_an_argon2_device_is_refused() -> None:
+    raw_token, device = _device()
+    _device_id, secret = parse_token(DEVICE_TOKEN_PREFIX, raw_token)
+    device.token_hash = _argon2_hash(secret + "x")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await current_device(_as_session(_FakeSession(device)), raw_token)
+
+    assert exc_info.value.status_code == 401

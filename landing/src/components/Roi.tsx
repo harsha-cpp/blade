@@ -17,7 +17,6 @@ export default function Roi() {
       className="relative flex w-full flex-col items-center justify-center gap-10 overflow-clip px-5 tab:px-10"
     >
       <div className="flex w-full max-w-[1720px] flex-col items-stretch justify-center gap-x-10 gap-y-10 overflow-clip lg:flex-row lg:items-end">
-        {/* left column */}
         <div className="flex w-full flex-col items-start justify-center gap-12 pt-10 lg:w-[660px] lg:shrink-0 lg:gap-24 lg:pt-[102px]">
           <div className="flex w-full flex-col items-center justify-center gap-20 overflow-clip">
             <div className="flex w-full flex-col items-start justify-center gap-8">
@@ -55,7 +54,6 @@ export default function Roi() {
           </div>
         </div>
 
-        {/* right column */}
         <div className="relative flex w-full flex-col items-start justify-end self-stretch lg:w-[660px] lg:shrink-0 lg:items-end">
           <div
             className="absolute left-[95px] top-[45px] z-[1] h-[787px] w-[432px]"

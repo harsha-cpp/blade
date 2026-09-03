@@ -52,7 +52,7 @@ export const verdictSchema = z.object({
 
 export const attachmentUploadResultSchema = z.object({
   attachment_scan_id: z.string(),
-  status: z.enum(["scanned", "queued", "failed"]),
+  status: z.enum(["scanned", "partial", "queued", "failed"]),
   verdict: verdictSchema.nullable().optional(),
   error: z.string().nullable().optional(),
 });

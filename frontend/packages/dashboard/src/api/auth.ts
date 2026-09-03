@@ -34,7 +34,11 @@ export interface MfaChallenge {
 
 export type LoginResult = AuthResponse | MfaChallenge;
 
-export function isMfaChallenge(result: LoginResult): result is MfaChallenge {
+export type SwitchOrgResult = AuthResponse | MfaChallenge;
+
+export function isMfaChallenge(
+  result: AuthResponse | MfaChallenge,
+): result is MfaChallenge {
   return (result as MfaChallenge).mfa_required === true;
 }
 
@@ -104,7 +108,7 @@ export const authApi = {
   me: () => request<AuthResponse>("/api/v1/auth/me"),
   myOrgs: () => request<OrgListItem[]>("/api/v1/auth/my-orgs"),
   switchOrg: (orgId: string) =>
-    request<AuthResponse>("/api/v1/auth/switch-org", {
+    request<SwitchOrgResult>("/api/v1/auth/switch-org", {
       method: "POST",
       body: { org_id: orgId },
     }),

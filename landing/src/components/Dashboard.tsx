@@ -5,7 +5,6 @@ import WindowFrame from "./ui/WindowFrame";
 export default function Dashboard() {
   return (
     <section className="relative z-[2] flex w-full flex-col items-center justify-center gap-10 overflow-x-clip bg-ink px-5 tab:px-0">
-      {/* phone */}
       <div className="relative z-[2] hidden w-full max-w-[350px] items-start justify-center bg-ink">
         <img
           src="/img/dash-phone-l.svg"
@@ -24,7 +23,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* tablet */}
       <div className="relative z-[2] hidden w-full max-w-[1440px] items-start justify-center tab:flex desk:hidden">
         <img
           src="/img/dash-tab-l.svg"
@@ -43,7 +41,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* desktop */}
       <div className="relative hidden w-full max-w-[1440px] items-center justify-center gap-[10px] desk:flex">
         <div className="relative z-[2] w-full max-w-[1160px]">
           <WindowFrame title="tryblade.in">

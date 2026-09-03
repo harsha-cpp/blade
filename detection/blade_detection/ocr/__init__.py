@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from time import monotonic
 
@@ -69,7 +70,7 @@ def has_indic_script(text: str) -> bool:
 
 
 def extract_text(
-    images: list[Image.Image],
+    images: Iterable[Image.Image],
     config: DetectionConfig,
     *,
     deadline: float | None = None,

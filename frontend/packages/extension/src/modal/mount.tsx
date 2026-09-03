@@ -2,7 +2,9 @@ import type { Verdict } from "@bladedlp/shared";
 import ReactDOM from "react-dom/client";
 import WarningModal from "./WarningModal";
 import styles from "./styles.css?inline";
-import { BACKEND_URL, QUARANTINE_POLL_TIMEOUT_MS } from "../config";
+import { QUARANTINE_POLL_TIMEOUT_MS } from "../config";
+import { sendBackendRequest } from "../backend-client";
+import { BACKEND_REQUEST_MESSAGE } from "../messages";
 
 interface ComposeView {
   getElement(): HTMLElement;
@@ -44,27 +46,16 @@ export function mountWarningModal(
     host.remove();
   };
 
+  const quarantineId = verdict.quarantine_id;
   const pollQuarantine =
-    verdict.quarantine_id && orgCode
-      ? async () => {
-          const controller = new AbortController();
-          const timer = setTimeout(
-            () => controller.abort(),
-            QUARANTINE_POLL_TIMEOUT_MS,
-          );
-          try {
-            const res = await fetch(
-              `${BACKEND_URL}/api/v1/quarantine/${encodeURIComponent(
-                verdict.quarantine_id ?? "",
-              )}/status?org_code=${encodeURIComponent(orgCode)}`,
-              { signal: controller.signal },
-            );
-            if (!res.ok) throw new Error(res.statusText);
-            return (await res.json()) as QuarantineStatus;
-          } finally {
-            clearTimeout(timer);
-          }
-        }
+    quarantineId && orgCode
+      ? async (): Promise<QuarantineStatus> =>
+          sendBackendRequest<QuarantineStatus>({
+            type: BACKEND_REQUEST_MESSAGE,
+            kind: "quarantine-status",
+            timeoutMs: QUARANTINE_POLL_TIMEOUT_MS,
+            quarantineId,
+          })
       : undefined;
 
   root.render(

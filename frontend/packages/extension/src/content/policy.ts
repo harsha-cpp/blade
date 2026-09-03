@@ -179,13 +179,18 @@ export function buildLocalVerdict(input: LocalVerdictInput): Verdict {
   }
 
   if (split.unapproved.length > 0) {
+    const detected =
+      types.length > 0
+        ? `This email contains sensitive data (${types.join(", ")}). `
+        : "";
     return verdict({
       action: "block",
       severity: scored.severity,
       risk: scored.risk,
-      policyIds: ["local-phi-policy"],
+      policyIds:
+        types.length > 0 ? ["local-phi-policy"] : ["unscannable-attachment"],
       entities,
-      message: `This email contains sensitive data (${types.join(", ")}). Blocked because recipient${
+      message: `${detected}Blocked because recipient${
         split.unapproved.length > 1 ? "s" : ""
       } [${split.unapproved.join(", ")}] ${split.unapproved.length > 1 ? "are" : "is"} not on your approved list.${unscannedNote}`,
     });

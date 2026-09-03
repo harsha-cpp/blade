@@ -52,6 +52,7 @@ class RuleConditions(BaseModel):
     entity_types_all: list[str] = Field(default_factory=_empty_strings)
     min_entity_count: int | None = Field(default=None, ge=0)
     min_subject_count: int | None = Field(default=None, ge=0)
+    min_unscanned_attachments: int | None = Field(default=None, ge=0)
     min_risk_score: float | None = Field(default=None, ge=0, le=100)
     max_risk_score: float | None = Field(default=None, ge=0, le=100)
     min_severity: Severity | None = None

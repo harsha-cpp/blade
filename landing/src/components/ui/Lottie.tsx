@@ -87,7 +87,6 @@ export default function Lottie({
           sync();
         });
       } catch {
-        /* keep the poster */
       }
     };
 

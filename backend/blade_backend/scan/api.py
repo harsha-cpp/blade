@@ -4,10 +4,12 @@ import asyncio
 import hashlib
 from collections.abc import Iterable
 from contextlib import suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
+import structlog
 from blade_detection.models import Entity as DetectionEntity
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -27,6 +29,7 @@ from blade_backend.db.models import (
 )
 from blade_backend.deps import DbSession
 from blade_backend.policy import (
+    UNSCANNED_ATTACHMENT_RULE,
     PolicyDecision,
     PolicySet,
     SenderClass,
@@ -34,13 +37,25 @@ from blade_backend.policy import (
     evaluate,
     load_policy_set,
 )
+from blade_backend.scan.attachment_status import (
+    contributes_entities,
+    is_fully_scanned,
+    status_for_extraction,
+)
 from blade_backend.scan.credentials import ScanPrincipal, principal_for_request
 from blade_backend.scan.limits import enforce_scan_limit
-from blade_backend.scan.runner import scan_attachment_bytes, scan_text
+from blade_backend.scan.runner import (
+    DetectionTimeoutError,
+    DetectionUnavailableError,
+    scan_attachment_bytes,
+    scan_text,
+)
 from blade_backend.settings import get_settings
 from blade_backend.storage import get_store
 from blade_backend.tasks.scan_tasks import process_attachment_scan
 from blade_backend.utils.uuid import uuid7
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -52,9 +67,12 @@ RecipientClass = Literal[
     "public_email",
     "unknown",
 ]
-AttachmentStatus = Literal["scanned", "queued", "failed"]
+AttachmentStatus = Literal["scanned", "partial", "queued", "failed"]
 HIGH_RISK_QUARANTINE_SCORE = 80
 WARN_RISK_SCORE = 50
+UPLOAD_CHUNK_BYTES = 256 * 1024
+TIMED_OUT_ATTACHMENT_ERROR = "attachment scan timed out"
+UNREADABLE_ATTACHMENT_ERROR = "attachment could not be scanned"
 
 _SEVERITY_RANK: dict[str, int] = {
     "none": 0,
@@ -152,6 +170,59 @@ class AttachmentScanResponse(BaseModel):
     error: str | None = None
 
 
+def _empty_entity_payloads() -> list[dict[str, object]]:
+    return []
+
+
+@dataclass(frozen=True, slots=True)
+class AttachmentFinding:
+    id: UUID
+    attachment_id: str
+    filename: str
+    sha256: str
+    status: AttachmentStatus
+    severity: EventSeverity
+    risk_score: float
+    entities: list[dict[str, object]] = field(default_factory=_empty_entity_payloads)
+
+
+def _finding(row: AttachmentScan) -> AttachmentFinding:
+    return AttachmentFinding(
+        id=row.id,
+        attachment_id=row.attachment_id,
+        filename=row.filename,
+        sha256=row.sha256,
+        status=row.status,
+        severity=row.severity,
+        risk_score=float(row.risk_score),
+        entities=list(row.entities or []),
+    )
+
+
+def _empty_recipient_hits() -> list[RecipientHit]:
+    return []
+
+
+@dataclass(frozen=True, slots=True)
+class ScanContext:
+    org_id: UUID
+    policy_set: PolicySet
+    sender_class: SenderClass
+    recipient_hits: list[RecipientHit] = field(default_factory=_empty_recipient_hits)
+
+
+def _empty_entity_hits() -> list[EntityHit]:
+    return []
+
+
+@dataclass(frozen=True, slots=True)
+class MessageDetection:
+    severity: EventSeverity
+    risk_score: float
+    unread_parts: int
+    entities: list[EntityHit] = field(default_factory=_empty_entity_hits)
+
+
 def _sender_email(principal: ScanPrincipal, claimed: object) -> str | None:
     if principal.email:
         return principal.email.lower()
@@ -160,11 +231,13 @@ def _sender_email(principal: ScanPrincipal, claimed: object) -> str | None:
     return None
 
 
-async def _org_for(session: AsyncSession, principal: ScanPrincipal) -> Organization:
-    org = await session.get(Organization, principal.org_id)
-    if org is None:
+async def _org_id_for(session: AsyncSession, principal: ScanPrincipal) -> UUID:
+    org_id = await session.scalar(
+        select(Organization.id).where(Organization.id == principal.org_id)
+    )
+    if org_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="unknown organization")
-    return org
+    return org_id
 
 
 def _domain(email: str) -> str:
@@ -300,6 +373,7 @@ def _policy_decision(
     detected_risk_score: float,
     sender_class: SenderClass = "internal",
     has_attachments: bool = False,
+    attachments_unscanned: int = 0,
     policy_set: PolicySet | None = None,
 ) -> PolicyDecision:
     facts = build_facts(
@@ -309,6 +383,7 @@ def _policy_decision(
         recipient_classes=[recipient.classification for recipient in recipients],
         sender_class=sender_class,
         has_attachments=has_attachments,
+        attachments_unscanned=attachments_unscanned,
     )
     decision = evaluate(facts, policy_set)
     return PolicyDecision(
@@ -328,6 +403,7 @@ def _build_verdict(
     detected_risk_score: float,
     sender_class: SenderClass = "internal",
     has_attachments: bool = False,
+    attachments_unscanned: int = 0,
     policy_set: PolicySet | None = None,
     quarantine_id: UUID | None = None,
 ) -> Verdict:
@@ -338,6 +414,7 @@ def _build_verdict(
         detected_risk_score=detected_risk_score,
         sender_class=sender_class,
         has_attachments=has_attachments,
+        attachments_unscanned=attachments_unscanned,
         policy_set=policy_set,
     )
     return Verdict(
@@ -351,6 +428,7 @@ def _build_verdict(
         user_message=decision.user_message,
         created_at=datetime.now(UTC).isoformat(),
         quarantine_id=str(quarantine_id) if quarantine_id else None,
+        degraded=attachments_unscanned > 0,
     )
 
 
@@ -396,7 +474,7 @@ async def _record_quarantine(
     sender: str,
     subject: str,
     verdict: Verdict,
-    attachment_rows: list[AttachmentScan],
+    findings: list[AttachmentFinding],
 ) -> QuarantineItem:
     item = QuarantineItem(
         org_id=org_id,
@@ -413,13 +491,13 @@ async def _record_quarantine(
         status="pending",
         attachment_refs=[
             {
-                "attachment_scan_id": str(row.id),
-                "attachment_id": row.attachment_id,
-                "filename": row.filename,
-                "sha256": row.sha256,
-                "status": row.status,
+                "attachment_scan_id": str(finding.id),
+                "attachment_id": finding.attachment_id,
+                "filename": finding.filename,
+                "sha256": finding.sha256,
+                "status": finding.status,
             }
-            for row in attachment_rows
+            for finding in findings
         ],
     )
     session.add(item)
@@ -427,49 +505,82 @@ async def _record_quarantine(
     return item
 
 
-async def _finalize_verdict(
+async def _load_scan_context(
     session: AsyncSession,
     *,
-    org: Organization,
-    client_scan_id: str,
-    subject: str,
-    body: str,
+    org_id: UUID,
     recipients: list[str],
     user_email: str | None,
-    attachment_rows: list[AttachmentScan],
+) -> ScanContext:
+    recipient_hits = await _classify_recipients(session, org_id, recipients)
+    sender_class = await _classify_sender(session, org_id, user_email) if user_email else "unknown"
+    policy_set = await load_policy_set(session, org_id)
+    return ScanContext(
+        org_id=org_id,
+        policy_set=policy_set,
+        sender_class=sender_class,
+        recipient_hits=recipient_hits,
+    )
+
+
+async def _detect_message(subject: str, body: str, recipients: list[str]) -> MessageDetection:
+    try:
+        result = await scan_text(subject, body, recipients)
+    except (DetectionTimeoutError, DetectionUnavailableError) as exc:
+        logger.warning("message detection did not complete", reason=type(exc).__name__)
+        return MessageDetection(severity="none", risk_score=0, unread_parts=1, entities=[])
+    return MessageDetection(
+        severity=result.severity,
+        risk_score=float(result.risk_score),
+        unread_parts=0,
+        entities=[_entity_hit(entity) for entity in result.entities],
+    )
+
+
+async def _record_verdict(
+    session: AsyncSession,
+    *,
+    context: ScanContext,
+    detection: MessageDetection,
+    findings: list[AttachmentFinding],
+    client_scan_id: str,
+    subject: str,
+    user_email: str | None,
     audit_client_event_id: str,
     principal_actor: str,
 ) -> Verdict:
-    result = await scan_text(subject, body, recipients)
-    entities = [_entity_hit(entity) for entity in result.entities]
-    entities.extend(
-        _entity_hit(entity)
-        for row in attachment_rows
-        if row.status == "scanned"
-        for entity in (row.entities or [])
+    entities = [
+        *detection.entities,
+        *(
+            _entity_hit(entity)
+            for finding in findings
+            if contributes_entities(finding.status)
+            for entity in finding.entities
+        ),
+    ]
+    unread_parts = detection.unread_parts + sum(
+        1 for finding in findings if not is_fully_scanned(finding.status)
     )
-    recipient_hits = await _classify_recipients(session, org.id, recipients)
-    sender_class = await _classify_sender(session, org.id, user_email) if user_email else "unknown"
-    policy_set = await load_policy_set(session, org.id)
     detected_risk = max(
-        [float(result.risk_score), *[float(row.risk_score) for row in attachment_rows]],
+        [detection.risk_score, *[finding.risk_score for finding in findings]],
         default=0,
     )
     detected_severity = _max_severity(
-        [str(result.severity), *[str(row.severity) for row in attachment_rows]]
+        [detection.severity, *[finding.severity for finding in findings]]
     )
     verdict = _build_verdict(
         entities=entities,
-        recipients=recipient_hits,
+        recipients=context.recipient_hits,
         detected_severity=detected_severity,
         detected_risk_score=detected_risk,
-        sender_class=sender_class,
-        has_attachments=bool(attachment_rows),
-        policy_set=policy_set,
+        sender_class=context.sender_class,
+        has_attachments=bool(findings),
+        attachments_unscanned=unread_parts,
+        policy_set=context.policy_set,
     )
     event = await _record_scan_event(
         session,
-        org_id=org.id,
+        org_id=context.org_id,
         client_event_id=audit_client_event_id,
         verdict=verdict,
         user_email=user_email,
@@ -477,18 +588,18 @@ async def _finalize_verdict(
     if verdict.action == "quarantine":
         quarantine = await _record_quarantine(
             session,
-            org_id=org.id,
+            org_id=context.org_id,
             scan_event_id=event.id,
             client_scan_id=client_scan_id,
             sender=user_email or "unattributed",
             subject=subject,
             verdict=verdict,
-            attachment_rows=attachment_rows,
+            findings=findings,
         )
         verdict.quarantine_id = str(quarantine.id)
         await write_audit_event(
             session,
-            org_id=org.id,
+            org_id=context.org_id,
             actor=principal_actor,
             category="quarantine",
             action="created",
@@ -502,7 +613,7 @@ async def _finalize_verdict(
 
     await write_audit_event(
         session,
-        org_id=org.id,
+        org_id=context.org_id,
         actor=principal_actor,
         category="scan",
         action=verdict.action,
@@ -512,11 +623,57 @@ async def _finalize_verdict(
             "matched_policy_ids": verdict.matched_policy_ids,
             "entity_count": len(verdict.entities),
             "recipient_count": len(verdict.recipients),
-            "sender_class": sender_class,
+            "sender_class": context.sender_class,
             "risk_score": verdict.risk_score,
             "severity": verdict.severity,
+            "attachments_unscanned": unread_parts,
+            "message_scan_incomplete": bool(detection.unread_parts),
+            "degraded": verdict.degraded,
         },
     )
+    return verdict
+
+
+async def _scan_message(
+    session: AsyncSession,
+    *,
+    principal: ScanPrincipal,
+    org_id: UUID,
+    client_scan_id: str,
+    subject: str,
+    body: str,
+    recipients: list[str],
+    user_email: str | None,
+    findings: list[AttachmentFinding],
+    audit_client_event_id: str,
+    claimed_email: str | None,
+) -> Verdict:
+    context = await _load_scan_context(
+        session,
+        org_id=org_id,
+        recipients=recipients,
+        user_email=user_email,
+    )
+    await session.close()
+
+    detection = await _detect_message(subject, body, recipients)
+
+    verdict = await _record_verdict(
+        session,
+        context=context,
+        detection=detection,
+        findings=findings,
+        client_scan_id=client_scan_id,
+        subject=subject,
+        user_email=user_email,
+        audit_client_event_id=audit_client_event_id,
+        principal_actor=principal.actor(claimed_email),
+    )
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="scan id already exists") from exc
     return verdict
 
 
@@ -538,18 +695,20 @@ async def _store_queued_attachment(data: bytes, filename: str) -> str:
 
 
 def _attachment_verdict(row: AttachmentScan) -> Verdict | None:
-    if row.status != "scanned":
+    if not contributes_entities(row.status):
         return None
+    partial = not is_fully_scanned(row.status)
     return Verdict(
         scan_id=str(row.id),
-        action="allow",
+        action="warn" if partial else "allow",
         severity=row.severity,
         risk_score=float(row.risk_score),
-        matched_policy_ids=[],
+        matched_policy_ids=[UNSCANNED_ATTACHMENT_RULE.id] if partial else [],
         entities=[_entity_hit(entity) for entity in row.entities],
         recipients=[],
-        user_message="Attachment scanned.",
+        user_message=(UNSCANNED_ATTACHMENT_RULE.user_message if partial else "Attachment scanned."),
         created_at=row.created_at.isoformat(),
+        degraded=partial,
     )
 
 
@@ -559,82 +718,248 @@ async def scan_email(
     session: DbSession,
     x_blade_device_token: Annotated[str | None, Header()] = None,
 ) -> Verdict:
+    """Scan a message body and record the verdict, releasing the database connection first."""
     principal = await principal_for_request(session, payload.org_code, x_blade_device_token)
     enforce_scan_limit(principal)
-    org = await _org_for(session, principal)
-    verdict = await _finalize_verdict(
+    org_id = await _org_id_for(session, principal)
+    return await _scan_message(
         session,
-        org=org,
+        principal=principal,
+        org_id=org_id,
         client_scan_id=payload.client_scan_id,
         subject=payload.subject,
         body=payload.body,
         recipients=[str(recipient).lower() for recipient in payload.recipients],
         user_email=_sender_email(principal, payload.user_email),
-        attachment_rows=[],
+        findings=[],
         audit_client_event_id=f"{payload.client_scan_id}:email",
-        principal_actor=principal.actor(payload.user_email),
+        claimed_email=payload.user_email,
     )
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="scan id already exists") from exc
-    return verdict
 
 
-@router.post("/attachment", response_model=AttachmentScanResponse)
-async def scan_attachment(
-    session: DbSession,
-    client_scan_id: Annotated[str, Form(..., min_length=4, max_length=128)],
-    attachment_id: Annotated[str, Form(..., min_length=1, max_length=128)],
-    file: Annotated[UploadFile, File(...)],
-    org_code: Annotated[str | None, Form(min_length=3, max_length=128)] = None,
-    x_blade_device_token: Annotated[str | None, Header()] = None,
-) -> AttachmentScanResponse:
-    principal = await principal_for_request(session, org_code, x_blade_device_token)
-    enforce_scan_limit(principal)
-    org = await _org_for(session, principal)
-    data = await file.read()
-    filename = file.filename or attachment_id
-    mime_type = file.content_type or "application/octet-stream"
-    sha256 = hashlib.sha256(data).hexdigest()
+async def _read_upload(file: UploadFile) -> bytes:
+    limit = get_settings().scan_max_attachment_bytes
+    buffer = bytearray()
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            return bytes(buffer)
+        buffer.extend(chunk)
+        if len(buffer) > limit:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="attachment is larger than the configured limit",
+            )
 
-    existing = await session.scalar(
+
+async def _existing_attachment_scan(
+    session: AsyncSession,
+    *,
+    org_id: UUID,
+    client_scan_id: str,
+    attachment_id: str,
+) -> AttachmentScan | None:
+    return await session.scalar(
         select(AttachmentScan).where(
-            AttachmentScan.org_id == org.id,
+            AttachmentScan.org_id == org_id,
             AttachmentScan.client_scan_id == client_scan_id,
             AttachmentScan.attachment_id == attachment_id,
         )
     )
-    if existing is not None:
-        return AttachmentScanResponse(
-            attachment_scan_id=str(existing.id),
-            status=existing.status,
-            verdict=_attachment_verdict(existing),
-            error=existing.error,
-        )
 
-    if _is_deep_scan_candidate(filename, mime_type, len(data)):
-        storage_key = await _store_queued_attachment(data, filename)
-        row = AttachmentScan(
-            org_id=org.id,
-            client_scan_id=client_scan_id,
+
+async def _resolve_duplicate_upload(
+    session: AsyncSession,
+    *,
+    org_id: UUID,
+    client_scan_id: str,
+    attachment_id: str,
+) -> AttachmentScanResponse:
+    await session.rollback()
+    duplicate = await _existing_attachment_scan(
+        session,
+        org_id=org_id,
+        client_scan_id=client_scan_id,
+        attachment_id=attachment_id,
+    )
+    if duplicate is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="attachment scan could not be stored",
+        )
+    logger.info(
+        "concurrent duplicate attachment upload resolved to the stored scan",
+        client_scan_id=client_scan_id,
+        attachment_id=attachment_id,
+    )
+    return _attachment_response(duplicate)
+
+
+def _attachment_response(row: AttachmentScan) -> AttachmentScanResponse:
+    return AttachmentScanResponse(
+        attachment_scan_id=str(row.id),
+        status=row.status,
+        verdict=_attachment_verdict(row),
+        error=row.error,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _AttachmentOutcome:
+    status: AttachmentStatus
+    severity: EventSeverity
+    risk_score: float
+    entities: list[dict[str, object]]
+    extraction_errors: list[str]
+    error: str | None
+
+
+async def _scan_attachment_outcome(
+    data: bytes,
+    *,
+    attachment_id: str,
+    filename: str,
+    mime_type: str,
+    sha256: str,
+) -> _AttachmentOutcome:
+    try:
+        result = await scan_attachment_bytes(
+            data,
             attachment_id=attachment_id,
             filename=filename,
             mime_type=mime_type,
-            size_bytes=len(data),
             sha256=sha256,
-            status="queued",
+        )
+    except DetectionTimeoutError:
+        logger.warning("attachment detection exceeded its deadline", sha256=sha256)
+        return _AttachmentOutcome(
+            status="failed",
             severity="none",
             risk_score=0,
             entities=[],
             extraction_errors=[],
-            storage_path=storage_key,
+            error=TIMED_OUT_ATTACHMENT_ERROR,
         )
+    except Exception as exc:
+        logger.warning(
+            "attachment detection failed",
+            sha256=sha256,
+            reason=type(exc).__name__,
+            detail=str(exc)[:500],
+        )
+        return _AttachmentOutcome(
+            status="failed",
+            severity="none",
+            risk_score=0,
+            entities=[],
+            extraction_errors=[],
+            error=UNREADABLE_ATTACHMENT_ERROR,
+        )
+
+    entities = [_entity_hit(entity).model_dump(exclude_none=True) for entity in result.entities]
+    return _AttachmentOutcome(
+        status=status_for_extraction(
+            extraction_errors=result.extraction_errors,
+            entity_count=len(entities),
+        ),
+        severity=result.severity,
+        risk_score=float(result.risk_score),
+        entities=entities,
+        extraction_errors=result.extraction_errors,
+        error="; ".join(result.extraction_errors[:3]) if result.extraction_errors else None,
+    )
+
+
+async def _persist_attachment_scan(
+    session: AsyncSession,
+    *,
+    principal: ScanPrincipal,
+    org_id: UUID,
+    client_scan_id: str,
+    attachment_id: str,
+    filename: str,
+    mime_type: str,
+    size_bytes: int,
+    sha256: str,
+    outcome: _AttachmentOutcome,
+) -> AttachmentScanResponse:
+    row = AttachmentScan(
+        org_id=org_id,
+        client_scan_id=client_scan_id,
+        attachment_id=attachment_id,
+        filename=filename,
+        mime_type=mime_type,
+        size_bytes=size_bytes,
+        sha256=sha256,
+        status=outcome.status,
+        severity=outcome.severity,
+        risk_score=outcome.risk_score,
+        entities=outcome.entities,
+        extraction_errors=outcome.extraction_errors,
+        error=outcome.error,
+    )
+    try:
         session.add(row)
         await write_audit_event(
             session,
-            org_id=org.id,
+            org_id=org_id,
+            actor=principal.actor(),
+            category="scan",
+            action=f"attachment_{outcome.status}",
+            metadata={
+                "client_scan_id": client_scan_id,
+                "attachment_id": attachment_id,
+                "filename": filename,
+                "sha256": sha256,
+                "entity_count": len(outcome.entities),
+            },
+        )
+        await session.commit()
+    except IntegrityError:
+        return await _resolve_duplicate_upload(
+            session,
+            org_id=org_id,
+            client_scan_id=client_scan_id,
+            attachment_id=attachment_id,
+        )
+    await session.refresh(row)
+    return _attachment_response(row)
+
+
+async def _queue_attachment_scan(
+    session: AsyncSession,
+    *,
+    principal: ScanPrincipal,
+    org_id: UUID,
+    client_scan_id: str,
+    attachment_id: str,
+    filename: str,
+    mime_type: str,
+    sha256: str,
+    data: bytes,
+) -> AttachmentScanResponse:
+    await session.close()
+    storage_key = await _store_queued_attachment(data, filename)
+    row = AttachmentScan(
+        org_id=org_id,
+        client_scan_id=client_scan_id,
+        attachment_id=attachment_id,
+        filename=filename,
+        mime_type=mime_type,
+        size_bytes=len(data),
+        sha256=sha256,
+        status="queued",
+        severity="none",
+        risk_score=0,
+        entities=[],
+        extraction_errors=[],
+        storage_path=storage_key,
+    )
+    try:
+        session.add(row)
+        await write_audit_event(
+            session,
+            org_id=org_id,
             actor=principal.actor(),
             category="scan",
             action="attachment_queued",
@@ -646,103 +971,80 @@ async def scan_attachment(
             },
         )
         await session.commit()
-        await session.refresh(row)
-        with suppress(Exception):
-            cast(Any, process_attachment_scan).delay(str(row.id))
-        return AttachmentScanResponse(attachment_scan_id=str(row.id), status="queued")
+    except IntegrityError:
+        await asyncio.to_thread(get_store().delete, storage_key)
+        return await _resolve_duplicate_upload(
+            session,
+            org_id=org_id,
+            client_scan_id=client_scan_id,
+            attachment_id=attachment_id,
+        )
+    await session.refresh(row)
+    with suppress(Exception):
+        cast(Any, process_attachment_scan).delay(str(row.id))
+    return AttachmentScanResponse(attachment_scan_id=str(row.id), status="queued")
 
-    try:
-        detection_result = await scan_attachment_bytes(
-            data,
-            attachment_id=attachment_id,
-            filename=filename,
-            mime_type=mime_type,
-            sha256=sha256,
-        )
-        entities = [
-            _entity_hit(entity).model_dump(exclude_none=True)
-            for entity in detection_result.entities
-        ]
-        status_value: AttachmentStatus = "scanned"
-        error = None
-        if detection_result.extraction_errors and not entities:
-            status_value = "failed"
-            error = "; ".join(detection_result.extraction_errors[:3])
-        row = AttachmentScan(
-            org_id=org.id,
+
+@router.post("/attachment", response_model=AttachmentScanResponse)
+async def scan_attachment(
+    session: DbSession,
+    client_scan_id: Annotated[str, Form(..., min_length=4, max_length=128)],
+    attachment_id: Annotated[str, Form(..., min_length=1, max_length=128)],
+    file: Annotated[UploadFile, File(...)],
+    org_code: Annotated[str | None, Form(min_length=3, max_length=128)] = None,
+    x_blade_device_token: Annotated[str | None, Header()] = None,
+) -> AttachmentScanResponse:
+    """Scan one attachment, or queue it when it needs a deep scan."""
+    principal = await principal_for_request(session, org_code, x_blade_device_token)
+    enforce_scan_limit(principal)
+    org_id = await _org_id_for(session, principal)
+    data = await _read_upload(file)
+    filename = file.filename or attachment_id
+    mime_type = file.content_type or "application/octet-stream"
+    sha256 = hashlib.sha256(data).hexdigest()
+
+    existing = await _existing_attachment_scan(
+        session,
+        org_id=org_id,
+        client_scan_id=client_scan_id,
+        attachment_id=attachment_id,
+    )
+    if existing is not None:
+        return _attachment_response(existing)
+
+    if _is_deep_scan_candidate(filename, mime_type, len(data)):
+        return await _queue_attachment_scan(
+            session,
+            principal=principal,
+            org_id=org_id,
             client_scan_id=client_scan_id,
             attachment_id=attachment_id,
             filename=filename,
             mime_type=mime_type,
-            size_bytes=len(data),
             sha256=sha256,
-            status=status_value,
-            severity=detection_result.severity,
-            risk_score=detection_result.risk_score,
-            entities=entities,
-            extraction_errors=detection_result.extraction_errors,
-            error=error,
+            data=data,
         )
-        session.add(row)
-        await write_audit_event(
-            session,
-            org_id=org.id,
-            actor=principal.actor(),
-            category="scan",
-            action=f"attachment_{status_value}",
-            metadata={
-                "client_scan_id": client_scan_id,
-                "attachment_id": attachment_id,
-                "filename": filename,
-                "sha256": sha256,
-                "entity_count": len(entities),
-            },
-        )
-        await session.commit()
-        await session.refresh(row)
-        return AttachmentScanResponse(
-            attachment_scan_id=str(row.id),
-            status=row.status,
-            verdict=_attachment_verdict(row),
-            error=row.error,
-        )
-    except Exception as exc:
-        row = AttachmentScan(
-            org_id=org.id,
-            client_scan_id=client_scan_id,
-            attachment_id=attachment_id,
-            filename=filename,
-            mime_type=mime_type,
-            size_bytes=len(data),
-            sha256=sha256,
-            status="failed",
-            severity="none",
-            risk_score=0,
-            entities=[],
-            extraction_errors=[],
-            error=str(exc),
-        )
-        session.add(row)
-        await write_audit_event(
-            session,
-            org_id=org.id,
-            actor=principal.actor(),
-            category="scan",
-            action="attachment_failed",
-            metadata={
-                "client_scan_id": client_scan_id,
-                "attachment_id": attachment_id,
-                "filename": filename,
-                "sha256": sha256,
-            },
-        )
-        await session.commit()
-        await session.refresh(row)
-        return AttachmentScanResponse(
-            attachment_scan_id=str(row.id),
-            status="failed",
-            error=row.error,
-        )
+
+    await session.close()
+    outcome = await _scan_attachment_outcome(
+        data,
+        attachment_id=attachment_id,
+        filename=filename,
+        mime_type=mime_type,
+        sha256=sha256,
+    )
+    return await _persist_attachment_scan(
+        session,
+        principal=principal,
+        org_id=org_id,
+        client_scan_id=client_scan_id,
+        attachment_id=attachment_id,
+        filename=filename,
+        mime_type=mime_type,
+        size_bytes=len(data),
+        sha256=sha256,
+        outcome=outcome,
+    )
 
 
 @router.get("/attachment/{attachment_scan_id}", response_model=AttachmentScanResponse)
@@ -771,40 +1073,36 @@ async def finalize_scan(
     session: DbSession,
     x_blade_device_token: Annotated[str | None, Header()] = None,
 ) -> Verdict:
+    """Combine attachment scans with a body scan and record the final verdict."""
     principal = await principal_for_request(session, payload.org_code, x_blade_device_token)
     enforce_scan_limit(principal)
-    org = await _org_for(session, principal)
-    rows: list[AttachmentScan] = []
+    org_id = await _org_id_for(session, principal)
+    findings: list[AttachmentFinding] = []
     if payload.attachment_scan_ids:
         fetched = (
             await session.scalars(
                 select(AttachmentScan).where(
-                    AttachmentScan.org_id == org.id,
+                    AttachmentScan.org_id == org_id,
                     AttachmentScan.id.in_(payload.attachment_scan_ids),
                 )
             )
         ).all()
-        rows = list(fetched)
-        found_ids = {row.id for row in rows}
+        findings = [_finding(row) for row in fetched]
+        found_ids = {finding.id for finding in findings}
         missing = [scan_id for scan_id in payload.attachment_scan_ids if scan_id not in found_ids]
         if missing:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="attachment scan not found")
 
-    verdict = await _finalize_verdict(
+    return await _scan_message(
         session,
-        org=org,
+        principal=principal,
+        org_id=org_id,
         client_scan_id=payload.client_scan_id,
         subject=payload.subject,
         body=payload.body,
         recipients=[str(recipient).lower() for recipient in payload.recipients],
         user_email=_sender_email(principal, payload.user_email),
-        attachment_rows=rows,
+        findings=findings,
         audit_client_event_id=payload.client_scan_id,
-        principal_actor=principal.actor(payload.user_email),
+        claimed_email=payload.user_email,
     )
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="scan id already exists") from exc
-    return verdict

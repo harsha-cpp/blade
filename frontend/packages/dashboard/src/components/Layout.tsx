@@ -2,12 +2,13 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ChevronsUpDown, Menu, Monitor, Moon, Sun, X } from "lucide-react";
 import { useAuth } from "../lib/auth";
-import { authApi, type OrgListItem } from "../api/auth";
+import { authApi, type MfaChallenge, type OrgListItem } from "../api/auth";
 import { navGroupsFor } from "../lib/roles";
 import { useTheme, type ThemePreference } from "../lib/theme";
 import { errorMessage } from "../lib/errors";
 import ErrorBoundary from "./ErrorBoundary";
 import BladeWordmark from "./BladeWordmark";
+import MfaChallengeForm from "./MfaChallengeForm";
 import { PageSkeleton } from "./Skeletons";
 
 const SIDEBAR_ID = "primary-sidebar";
@@ -21,6 +22,8 @@ export default function Layout() {
   const [orgs, setOrgs] = useState<OrgListItem[]>([]);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
+  const [challengeOrg, setChallengeOrg] = useState<OrgListItem | null>(null);
   const switcherRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => navGroupsFor(member?.role), [member?.role]);
@@ -65,6 +68,18 @@ export default function Layout() {
   }, [navOpen]);
 
   useEffect(() => {
+    if (!challenge) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setChallenge(null);
+        setChallengeOrg(null);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [challenge]);
+
+  useEffect(() => {
     const wide = window.matchMedia("(min-width: 900px)");
     function onChange(e: MediaQueryListEvent) {
       if (e.matches) setNavOpen(false);
@@ -83,13 +98,23 @@ export default function Layout() {
     };
   }, [navOpen]);
 
+  function dismissChallenge() {
+    setChallenge(null);
+    setChallengeOrg(null);
+  }
+
   async function switchTo(org: OrgListItem) {
     setOpen(false);
     if (org.id === organization?.id) return;
     setSwitchError(null);
     setSwitching(org.id);
     try {
-      await switchOrg(org.id);
+      const mfa = await switchOrg(org.id);
+      if (mfa) {
+        setChallenge(mfa);
+        setChallengeOrg(org);
+        return;
+      }
       setOrgs([]);
     } catch (err) {
       setSwitchError(errorMessage(err, "Could not switch organization"));
@@ -220,6 +245,35 @@ export default function Layout() {
           </Suspense>
         </ErrorBoundary>
       </main>
+
+      {challenge ? (
+        <div className="dialog-scrim" role="presentation">
+          <div
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="switch-mfa-title"
+          >
+            <h2 className="h2" id="switch-mfa-title">
+              Two-factor check
+            </h2>
+            <p className="muted">
+              Enter the code from your authenticator app to continue into{" "}
+              <strong>{challengeOrg?.name ?? "that organization"}</strong>.
+            </p>
+            <MfaChallengeForm
+              challenge={challenge}
+              cancelLabel="Cancel"
+              expiredHint="This challenge expired. Pick the organization again to get a new one."
+              onVerified={() => {
+                dismissChallenge();
+                setOrgs([]);
+              }}
+              onCancel={dismissChallenge}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

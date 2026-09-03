@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Protocol, cast
@@ -13,6 +14,10 @@ logger = structlog.get_logger(__name__)
 
 NER_CONFIDENCE = 0.55
 NER_PRIORITY = 20
+NER_CHUNK_CHARS = 100_000
+NER_CHUNK_BOUNDARY_SEARCH = 4_000
+TITLE_LOOKBEHIND_CHARS = 16
+UNUSED_PIPELINE_COMPONENTS = ("tagger", "parser", "attribute_ruler", "lemmatizer", "senter")
 
 _TITLE_BEFORE = re.compile(
     r"(?:mr|mrs|ms|miss|dr|doctor|master|baby|smt|shri|sri|prof)\.?\s+$",
@@ -21,7 +26,7 @@ _TITLE_BEFORE = re.compile(
 
 
 class _SpacyLoader(Protocol):
-    def __call__(self, name: str) -> Language: ...
+    def __call__(self, name: str, *, exclude: list[str]) -> Language: ...
 
 
 class NlpModelUnavailableError(RuntimeError):
@@ -40,7 +45,7 @@ class NerSpan:
 def load_model(model_name: str) -> Language:
     loader = cast(_SpacyLoader, spacy.load)
     try:
-        return loader(model_name)
+        return loader(model_name, exclude=list(UNUSED_PIPELINE_COMPONENTS))
     except OSError as exc:
         raise NlpModelUnavailableError(
             f"spaCy model {model_name!r} is not installed. It is a declared "
@@ -171,18 +176,47 @@ def looks_like_name(text: str) -> bool:
     return True
 
 
+def chunk_offsets(text: str, chunk_chars: int) -> Iterator[tuple[int, str]]:
+    start = 0
+    length = len(text)
+    while start < length:
+        end = min(start + chunk_chars, length)
+        if end < length:
+            end = _split_point(text, start, end)
+        yield start, text[start:end]
+        start = end
+
+
+def _split_point(text: str, start: int, end: int) -> int:
+    floor = max(start + 1, end - NER_CHUNK_BOUNDARY_SEARCH)
+    window = text[floor:end]
+    for separator in ("\n", " "):
+        index = window.rfind(separator)
+        if index != -1:
+            return floor + index + 1
+    return end
+
+
+def _preceded_by_title(text: str, start: int) -> bool:
+    prefix = text[max(0, start - TITLE_LOOKBEHIND_CHARS) : start]
+    return _TITLE_BEFORE.search(prefix) is not None
+
+
 def person_spans(text: str, model_name: str) -> list[NerSpan]:
     if not text.strip():
         return []
-    document = load_model(model_name)(text)
+    nlp = load_model(model_name)
+    chunk_chars = min(NER_CHUNK_CHARS, nlp.max_length)
     spans: list[NerSpan] = []
-    for entity in document.ents:
-        titled = _TITLE_BEFORE.search(text[: entity.start_char]) is not None
-        if entity.label_ != "PERSON" and not (entity.label_ == "ORG" and titled):
-            continue
-        if not looks_like_name(entity.text):
-            continue
-        if len(entity.text.split()) < 2 and not titled:
-            continue
-        spans.append(NerSpan(entity.text, "PERSON", entity.start_char, entity.end_char))
+    for offset, chunk in chunk_offsets(text, chunk_chars):
+        for entity in nlp(chunk).ents:
+            start = offset + entity.start_char
+            titled = _preceded_by_title(text, start)
+            if entity.label_ != "PERSON" and not (entity.label_ == "ORG" and titled):
+                continue
+            if not looks_like_name(entity.text):
+                continue
+            if len(entity.text.split()) < 2 and not titled:
+                continue
+            spans.append(NerSpan(entity.text, "PERSON", start, offset + entity.end_char))
     return spans

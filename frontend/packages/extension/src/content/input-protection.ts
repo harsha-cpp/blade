@@ -275,9 +275,7 @@ export function installInputProtection(
     showNotice(decision);
     try {
       options.onBlocked?.(decision);
-    } catch {
-      // Reporting is best effort; the block has already happened.
-    }
+    } catch {}
   };
   let lastFocusedEditable: HTMLElement | null = null;
 

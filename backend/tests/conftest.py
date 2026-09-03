@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from blade_backend.main import create_app
+os.environ.setdefault("SCAN_PROCESS_POOL_ENABLED", "false")
 
 
 @pytest.fixture(scope="session")
 def app() -> FastAPI:
+    from blade_backend.main import create_app  # noqa: PLC0415
+
     return create_app()
 
 

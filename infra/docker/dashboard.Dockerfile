@@ -12,7 +12,7 @@
 # Vite performs a literal text substitution of import.meta.env.* at build time
 # (frontend/packages/dashboard/src/lib/api.ts). There is no runtime environment
 # in a static bundle, so pointing the dashboard at a different API means
-# REBUILDING THE IMAGE — you cannot change it with `docker run -e`. The nginx
+# REBUILDING THE IMAGE - you cannot change it with `docker run -e`. The nginx
 # Content-Security-Policy connect-src is derived from the same arg for that reason.
 
 ARG NODE_IMAGE=node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
@@ -63,7 +63,7 @@ RUN pnpm --filter @bladedlp/dashboard build \
     && test -f packages/dashboard/dist/index.html
 
 # ===========================================================================
-# runtime — nginx serving the static build
+# runtime - nginx serving the static build
 # ===========================================================================
 FROM ${NGINX_IMAGE} AS runtime
 
@@ -106,7 +106,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --quiet --spider --tries=1 http://127.0.0.1:8080/healthz || exit 1
 
 # Clear the base image's ENTRYPOINT (/docker-entrypoint.sh): every script it runs
-# — ipv6 templating, envsubst, worker-process tuning — needs root and either
+# - ipv6 templating, envsubst, worker-process tuning - needs root and either
 # no-ops or fails for a non-root user, and dropping it makes nginx PID 1 directly
 # so SIGQUIT reaches the master instead of a shell.
 ENTRYPOINT []

@@ -1,6 +1,6 @@
 # Demo runbook
 
-A start-to-finish walkthrough of Auro Healthcare DLP on a laptop: bring up the
+A start-to-finish walkthrough of Blade on a laptop: bring up the
 dev stack, create an organization, configure the domain lists, then send a
 sequence of Gmail messages that produces every verdict the policy engine can
 return, paste an Aadhaar number into ChatGPT and watch it be refused, and review
@@ -19,7 +19,7 @@ Five containers, the API, the dashboard, and the extension loaded in Chrome.
 ### Infrastructure
 
 ```bash
-cd /path/to/aurodlpv2
+cd /path/to/blade
 docker compose -f infra/docker-compose.yml up -d     # same as: make dev-up
 docker compose -f infra/docker-compose.yml ps
 ```
@@ -75,7 +75,7 @@ VITE_BACKEND_URL=http://localhost:8000 pnpm --filter @bladedlp/extension build
 
 `VITE_BACKEND_URL` is read at build time and feeds both the runtime backend URL
 and the manifest's `host_permissions`. A plain `pnpm build` runs in production
-mode and defaults to `https://api.aurodlpv2.io`, which produces an extension that
+mode and defaults to `https://api.bladedlp.io`, which produces an extension that
 cannot reach your laptop, so pass the variable explicitly. `make extension-dev`
 (vite dev with HMR) defaults to `http://localhost:8000` and also writes `dist/`.
 
@@ -125,12 +125,12 @@ above, and on the `/onboarding` page.
 
 Either route works; both write the same value.
 
-- **Popup**: click the Auro toolbar icon -> under **Organization**, paste the code
+- **Popup**: click the Blade toolbar icon -> under **Organization**, paste the code
   into **Organization code** -> **Link**. The status card flips from
   "Not linked yet" to "Protection on - Checking outgoing mail for Sunrise Hospital."
 - **In-Gmail banner**: open Gmail; about 1.5 seconds after load, an unlinked
   install shows a bottom-right card, "Link this install to your organization so
-  Auro can check recipients. Until then, messages with patient data are held for
+  Blade can check recipients. Until then, messages with patient data are held for
   review." Paste the code and press **Link organization**. Dismissing it with the
   close control suppresses it permanently for that profile, so prefer the popup if you have
   already clicked it away.
@@ -336,13 +336,13 @@ Open any ordinary site, say `https://example.com`, and open DevTools. The consol
 prints:
 
 ```
-[Auro] input protection active on example.com
+[Blade] input protection active on example.com
 ```
 
 You can also check the marker it sets on the page:
 
 ```js
-document.documentElement.dataset.auroInputProtection   // "on"
+document.documentElement.dataset.bladeInputProtection   // "on"
 ```
 
 If neither is there, the content script did not run. Rebuild, reload the
@@ -469,9 +469,9 @@ local rule pack and the modal says so.
 **Overview** (`/`) - the stat band across the top: Messages scanned (with an
 email/web split underneath), Stopped (with the blocked/held/escalated split),
 Warned, Allowed, Intervention rate, Average risk. Below it, **Daily outcomes**, a
-stacked chart of every scanned message by what Auro did with it (Allowed /
+stacked chart of every scanned message by what Blade did with it (Allowed /
 Warned / Stopped), with a toggle to read the same data as a table. Then **What
-Auro is finding** (detections by type), **Senders with the most blocks**,
+Blade is finding** (detections by type), **Senders with the most blocks**,
 **Where data was blocked** (the web-block hostnames from section 5, top ten by
 count), and **Recent events**, with a **Where** column reading `Gmail` or the
 hostname. The whole run above should be visible in order. The range control does
@@ -531,11 +531,11 @@ the Gmail DOM at all, which classifies it `unknown` and blocks the same way.
 Check the matched rule id in the modal, and add the exact address on the Approved
 domains page.
 
-**The modal says the decision was made locally.** "Auro could not reach the
+**The modal says the decision was made locally.** "Blade could not reach the
 server, so this decision was made locally with a smaller rule set" means the
 backend call failed. Check, in order: the API is up on :8000; the extension was
 built with `VITE_BACKEND_URL=http://localhost:8000` (a production build points at
-`https://api.aurodlpv2.io`); and `CORS_ORIGINS` in `backend/.env` includes
+`https://api.bladedlp.io`); and `CORS_ORIGINS` in `backend/.env` includes
 `https://mail.google.com`, since the scan request comes from the Gmail page
 origin, not from the extension origin.
 

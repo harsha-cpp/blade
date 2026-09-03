@@ -55,6 +55,7 @@ export default [
       globals,
     },
     rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-unused-vars': [
         'error',
         {

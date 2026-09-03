@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from importlib import import_module
 from io import BytesIO
 from typing import Any, cast
 
 import structlog
+
+from blade_detection.extractors.issues import ExtractionIssue, no_issues, unique_issues
 
 logger = structlog.get_logger(__name__)
 
@@ -12,30 +15,40 @@ MAX_EXTRACTED_CHARS = 1_000_000
 MAX_SLIDES = 200
 
 
-def extract_text(data: bytes) -> str:
+@dataclass(frozen=True, slots=True)
+class PresentationContent:
+    text: str
+    issues: list[str] = field(default_factory=no_issues)
+
+
+def extract(data: bytes) -> PresentationContent:
     try:
         presentation_factory: Any = import_module("pptx").Presentation
         presentation = presentation_factory(BytesIO(data))
     except Exception:
         logger.warning("pptx attachment open failed")
-        return ""
+        return PresentationContent("", [ExtractionIssue.PRESENTATION_OPEN_FAILED])
 
     chunks: list[str] = []
+    issues: list[str] = []
     total = 0
     try:
         for index, slide in enumerate(presentation.slides):
             if index >= MAX_SLIDES:
+                issues.append(ExtractionIssue.PRESENTATION_SLIDE_LIMIT)
                 break
             for shape in slide.shapes:
                 total = _append(chunks, _shape_text(shape), total)
                 if total >= MAX_EXTRACTED_CHARS:
-                    return "\n".join(chunks)
+                    issues.append(ExtractionIssue.TEXT_LIMIT)
+                    return PresentationContent("\n".join(chunks), unique_issues(issues))
             notes = getattr(slide, "notes_slide", None)
             if notes is not None and getattr(notes, "notes_text_frame", None) is not None:
                 total = _append(chunks, notes.notes_text_frame.text, total)
     except Exception:
         logger.warning("pptx attachment extraction failed")
-    return "\n".join(chunks)
+        issues.append(ExtractionIssue.PRESENTATION_UNREADABLE)
+    return PresentationContent("\n".join(chunks), unique_issues(issues))
 
 
 def _shape_text(shape: Any) -> str:

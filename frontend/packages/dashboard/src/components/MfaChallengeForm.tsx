@@ -7,10 +7,14 @@ export default function MfaChallengeForm({
   challenge,
   onVerified,
   onCancel,
+  cancelLabel = "Back to sign in",
+  expiredHint = "This challenge expired. Sign in again to get a new one.",
 }: {
   challenge: MfaChallenge;
   onVerified: () => void;
   onCancel: () => void;
+  cancelLabel?: string;
+  expiredHint?: string;
 }) {
   const { completeMfa } = useAuth();
   const [code, setCode] = useState("");
@@ -63,7 +67,7 @@ export default function MfaChallengeForm({
         />
         <span className="hint">
           {expired
-            ? "This challenge expired. Sign in again to get a new one."
+            ? expiredHint
             : `Expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}. A backup code works here too.`}
         </span>
       </div>
@@ -76,7 +80,7 @@ export default function MfaChallengeForm({
         {submitting ? "Verifying..." : "Verify"}
       </button>
       <button type="button" className="btn btn-ghost w-full" onClick={onCancel}>
-        Back to sign in
+        {cancelLabel}
       </button>
     </form>
   );

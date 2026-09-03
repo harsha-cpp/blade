@@ -10,10 +10,13 @@ from typing import Any, Protocol, cast
 import structlog
 from PIL import Image, UnidentifiedImageError
 
+from blade_detection.extractors.issues import ExtractionIssue, no_issues, unique_issues
+
 logger = structlog.get_logger(__name__)
 
 MAX_EXTRACTED_CHARS = 1_000_000
 MAX_EMBEDDED_IMAGES = 20
+MAX_INSPECTED_PARTS = 20
 _TEXT_XMLNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
@@ -41,10 +44,12 @@ def _empty_images() -> list[Image.Image]:
 class DocxContent:
     text: str
     images: list[Image.Image] = field(default_factory=_empty_images)
+    issues: list[str] = field(default_factory=no_issues)
 
 
 def extract(data: bytes) -> DocxContent:
     chunks: list[str] = []
+    issues: list[str] = []
     total = 0
 
     try:
@@ -52,7 +57,7 @@ def extract(data: bytes) -> DocxContent:
         document = document_factory(BytesIO(data))
     except Exception:
         logger.warning("docx attachment open failed")
-        return DocxContent("")
+        return DocxContent("", issues=[ExtractionIssue.DOCX_OPEN_FAILED])
 
     try:
         for paragraph in cast(Iterable[_Paragraph], document.paragraphs):
@@ -67,13 +72,23 @@ def extract(data: bytes) -> DocxContent:
                     total = _append(chunks, paragraph.text, total)
     except Exception:
         logger.warning("docx attachment extraction failed")
+        issues.append(ExtractionIssue.DOCX_UNREADABLE)
 
-    chunks.extend(_textbox_text(data))
-    return DocxContent("\n".join(chunk for chunk in chunks if chunk), _embedded_images(data))
+    if total >= MAX_EXTRACTED_CHARS:
+        issues.append(ExtractionIssue.TEXT_LIMIT)
 
+    textbox_chunks, textbox_issues = _textbox_text(data)
+    chunks.extend(textbox_chunks)
+    issues.extend(textbox_issues)
 
-def extract_text(data: bytes) -> str:
-    return extract(data).text
+    images, image_issues = _embedded_images(data)
+    issues.extend(image_issues)
+
+    return DocxContent(
+        "\n".join(chunk for chunk in chunks if chunk),
+        images,
+        unique_issues(issues),
+    )
 
 
 def _append(chunks: list[str], value: str, total: int) -> int:
@@ -87,7 +102,7 @@ def _append(chunks: list[str], value: str, total: int) -> int:
     return total + len(chunk)
 
 
-def _textbox_text(data: bytes) -> list[str]:
+def _textbox_text(data: bytes) -> tuple[list[str], list[str]]:
     try:
         from xml.etree import ElementTree
 
@@ -98,7 +113,10 @@ def _textbox_text(data: bytes) -> list[str]:
                 if name.startswith("word/") and name.endswith(".xml")
             ]
             found: list[str] = []
-            for name in names[:20]:
+            issues: list[str] = []
+            if len(names) > MAX_INSPECTED_PARTS:
+                issues.append(ExtractionIssue.DOCX_PART_LIMIT)
+            for name in names[:MAX_INSPECTED_PARTS]:
                 root = ElementTree.fromstring(archive.read(name))
                 for node in root.iter(f"{{{_TEXT_XMLNS}}}txbxContent"):
                     text = "".join(
@@ -106,14 +124,15 @@ def _textbox_text(data: bytes) -> list[str]:
                     )
                     if text.strip():
                         found.append(text)
-            return found
+            return found, issues
     except Exception:
         logger.warning("docx text box extraction failed")
-        return []
+        return [], [ExtractionIssue.DOCX_TEXT_BOX_UNREADABLE]
 
 
-def _embedded_images(data: bytes) -> list[Image.Image]:
+def _embedded_images(data: bytes) -> tuple[list[Image.Image], list[str]]:
     images: list[Image.Image] = []
+    issues: list[str] = []
     try:
         with zipfile.ZipFile(BytesIO(data)) as archive:
             media = [
@@ -122,13 +141,17 @@ def _embedded_images(data: bytes) -> list[Image.Image]:
                 if name.startswith("word/media/")
                 and name.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"))
             ]
+            if len(media) > MAX_EMBEDDED_IMAGES:
+                issues.append(ExtractionIssue.DOCX_IMAGE_LIMIT)
             for name in media[:MAX_EMBEDDED_IMAGES]:
                 try:
                     image = Image.open(BytesIO(archive.read(name)))
                     image.load()
                     images.append(image.convert("RGB"))
                 except (OSError, UnidentifiedImageError, ValueError):
+                    issues.append(ExtractionIssue.DOCX_IMAGE_UNREADABLE)
                     continue
     except Exception:
         logger.warning("docx embedded image extraction failed")
-    return images
+        issues.append(ExtractionIssue.DOCX_IMAGE_UNREADABLE)
+    return images, issues

@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from argon2 import PasswordHasher
+from argon2.low_level import Type
 
 from blade_backend.auth.tokens import (
     DEVICE_TOKEN_PREFIX,
     PASSWORD_RESET_PREFIX,
     TokenFormatError,
+    hash_token_secret,
+    is_legacy_token_hash,
     issue_token,
     parse_token,
     verify_token_secret,
@@ -62,3 +66,27 @@ def test_expiry_is_measured_from_the_issue_time() -> None:
     issued = issue_token(DEVICE_TOKEN_PREFIX, ttl=timedelta(days=365), now=issued_at)
 
     assert issued.expires_at == issued_at + timedelta(days=365)
+
+
+@pytest.mark.unit
+def test_stored_hashes_declare_their_format_unambiguously() -> None:
+    issued = issue_token(DEVICE_TOKEN_PREFIX, ttl=timedelta(days=1))
+    _token_id, secret = parse_token(DEVICE_TOKEN_PREFIX, issued.raw_token)
+    legacy = PasswordHasher(type=Type.ID).hash(secret).encode("utf-8")
+
+    assert issued.token_hash.startswith(b"sha256:")
+    assert is_legacy_token_hash(issued.token_hash) is False
+    assert legacy.startswith(b"$argon2")
+    assert is_legacy_token_hash(legacy) is True
+
+
+@pytest.mark.unit
+def test_both_stored_formats_verify_the_same_secret() -> None:
+    issued = issue_token(PASSWORD_RESET_PREFIX, ttl=timedelta(hours=1))
+    _token_id, secret = parse_token(PASSWORD_RESET_PREFIX, issued.raw_token)
+    legacy = PasswordHasher(type=Type.ID).hash(secret).encode("utf-8")
+
+    assert verify_token_secret(secret, legacy) is True
+    assert verify_token_secret(secret, hash_token_secret(secret)) is True
+    assert verify_token_secret("not-the-secret", legacy) is False
+    assert verify_token_secret("not-the-secret", hash_token_secret(secret)) is False

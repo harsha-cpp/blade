@@ -96,20 +96,33 @@ _ABHA_CONTEXT: Final[list[str]] = [
 
 _AADHAAR_CONTEXT: Final[list[str]] = ["aadhaar", "aadhar", "uidai", "uid", "adhaar"]
 
+_WORD_GAP: Final[str] = r"\s{1,4}"
+
+_LABEL_GAP: Final[str] = r"\s{0,8}"
+
+_ID_SEPARATOR: Final[str] = r"\.?[ \t]{0,8}[:#-]?\s{0,8}"
+
+_NAME_SEPARATOR: Final[str] = r"[ \t]{0,8}[:\-]?\s{0,8}"
+
 _MRN_LABEL: Final[str] = (
-    r"(?:UHIDs?|MRNs?|M\.R\.N|Medical\s+Record(?:\s+(?:No|Number))?|"
-    r"Hospital\s+No|Patient\s+ID|Patient\s+No|Reg(?:istration)?\s+No)"
+    r"(?:UHIDs?|MRNs?|M\.R\.N|Medical" + _WORD_GAP + r"Record(?:" + _WORD_GAP + r"(?:No|Number))?|"
+    r"Hospital" + _WORD_GAP + r"No|Patient" + _WORD_GAP + r"ID|Patient" + _WORD_GAP + r"No|"
+    r"Reg(?:istration)?" + _WORD_GAP + r"No)"
 )
 
 _ID_VALUE: Final[str] = r"(?=[A-Za-z0-9/-]*\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20}"
 
-_ID_CONTINUATION: Final[str] = rf"\s*(?:,|and|through|to)\s*({_ID_VALUE})"
+_ID_CONTINUATION: Final[str] = _LABEL_GAP + r"(?:,|and|through|to)" + _LABEL_GAP + rf"({_ID_VALUE})"
 
 _POLICY_VALUE: Final[str] = r"(?=[A-Z0-9/-]*\d)[A-Z0-9][A-Z0-9/-]{5,30}"
 
-_NAME_VALUE: Final[str] = r"(?:[A-Z]\.?\s+)?[A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3}"
+_NAME_VALUE: Final[str] = (
+    r"(?:[A-Z]\.?" + _WORD_GAP + r")?[A-Z][a-z]{1,}(?:" + _WORD_GAP + r"[A-Z][a-z]{1,}){0,3}"
+)
 
-_NAME_VALUE_MULTI: Final[str] = r"(?:[A-Z]\.?\s+)?[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){1,3}"
+_NAME_VALUE_MULTI: Final[str] = (
+    r"(?:[A-Z]\.?" + _WORD_GAP + r")?[A-Z][a-z]{2,}(?:" + _WORD_GAP + r"[A-Z][a-z]{2,}){1,3}"
+)
 
 
 def _rule(**kwargs: object) -> Rule:
@@ -177,7 +190,7 @@ BUILTIN_RULES: Final[list[Rule]] = [
     _rule(
         entity_type="MRN",
         name="mrn-labelled",
-        pattern=rf"{_MRN_LABEL}\.?\s*[:#-]?\s*({_ID_VALUE})",
+        pattern=rf"{_MRN_LABEL}{_ID_SEPARATOR}({_ID_VALUE})",
         base_confidence=0.85,
         value_group=1,
         continuation=_ID_CONTINUATION,
@@ -199,8 +212,9 @@ BUILTIN_RULES: Final[list[Rule]] = [
         entity_type="PATIENT_VISIT_ID",
         name="visit-id-labelled",
         pattern=(
-            r"(?:IP|OP|IPD|OPD|Admission|Visit|Encounter)\s*"
-            rf"(?:No|Number|ID)\.?\s*[:#-]?\s*({_ID_VALUE})"
+            r"(?:IP|OP|IPD|OPD|Admission|Visit|Encounter)"
+            + _LABEL_GAP
+            + rf"(?:No|Number|ID){_ID_SEPARATOR}({_ID_VALUE})"
         ),
         base_confidence=0.8,
         value_group=1,
@@ -211,8 +225,8 @@ BUILTIN_RULES: Final[list[Rule]] = [
         entity_type="LAB_ACCESSION",
         name="lab-accession-labelled",
         pattern=(
-            r"(?:accession|specimen\s*(?:no|id)?|sample\s*(?:no|id|accession))"
-            rf"\.?\s*[:#-]?\s*({_ID_VALUE})"
+            r"(?:accession|specimen[ \t]{0,8}(?:no|id)?|"
+            r"sample[ \t]{0,8}(?:no|id|accession))" + rf"{_ID_SEPARATOR}({_ID_VALUE})"
         ),
         base_confidence=0.8,
         value_group=1,
@@ -249,9 +263,16 @@ BUILTIN_RULES: Final[list[Rule]] = [
         entity_type="MEDICAL_LICENSE",
         name="practitioner-registration",
         pattern=(
-            r"(?:(?:medical|nursing|dental)\s+council\s*)?"
-            r"reg(?:istration)?\.?\s*(?:no|number)\.?\s*[:#-]?\s*"
-            r"([A-Z]{0,3}[-/]?\d{4,8})"
+            r"(?:(?:medical|nursing|dental)"
+            + _WORD_GAP
+            + r"council"
+            + _LABEL_GAP
+            + r")?"
+            + r"reg(?:istration)?\.?"
+            + _LABEL_GAP
+            + r"(?:no|number)"
+            + _ID_SEPARATOR
+            + r"([A-Z]{0,3}[-/]?\d{4,8})"
         ),
         base_confidence=0.6,
         value_group=1,
@@ -285,7 +306,7 @@ BUILTIN_RULES: Final[list[Rule]] = [
     _rule(
         entity_type="INSURANCE_POLICY",
         name="policy-labelled",
-        pattern=rf"(?i:policy)\s*(?i:no|number)?\.?\s*[:#-]?\s*({_POLICY_VALUE})",
+        pattern=rf"(?i:policy){_LABEL_GAP}(?i:no|number)?{_ID_SEPARATOR}({_POLICY_VALUE})",
         base_confidence=0.85,
         value_group=1,
         case_sensitive=True,
@@ -294,7 +315,7 @@ BUILTIN_RULES: Final[list[Rule]] = [
     _rule(
         entity_type="INSURANCE_POLICY",
         name="claim-labelled",
-        pattern=rf"(?i:claim)\s*(?i:no|number|id|ref)?\.?\s*[:#-]?\s*({_POLICY_VALUE})",
+        pattern=rf"(?i:claim){_LABEL_GAP}(?i:no|number|id|ref)?{_ID_SEPARATOR}({_POLICY_VALUE})",
         base_confidence=0.8,
         value_group=1,
         case_sensitive=True,
@@ -331,8 +352,10 @@ BUILTIN_RULES: Final[list[Rule]] = [
         entity_type="DATE_OF_BIRTH",
         name="dob-labelled",
         pattern=(
-            r"(?:D\.?O\.?B\.?|date\s+of\s+birth|born\s+on|birth\s*date)"
-            r"[^\n]{0,25}?(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})"
+            r"(?:D\.?O\.?B\.?|date" + _WORD_GAP + r"of" + _WORD_GAP + r"birth|"
+            r"born" + _WORD_GAP + r"on|birth\s{0,4}date)"
+            r"[^\n]{0,25}?(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|"
+            r"\d{1,2}" + _WORD_GAP + r"[A-Za-z]{3,9}" + _WORD_GAP + r"\d{4})"
         ),
         base_confidence=0.85,
         value_group=1,
@@ -385,8 +408,9 @@ BUILTIN_RULES: Final[list[Rule]] = [
         entity_type="PERSON",
         name="person-titled",
         pattern=(
-            r"\b(?i:Mr|Mrs|Ms|Miss|Dr|Doctor|Master|Baby|Smt|Shri|Sri|Prof)\.?\s+"
-            rf"({_NAME_VALUE})"
+            r"\b(?i:Mr|Mrs|Ms|Miss|Dr|Doctor|Master|Baby|Smt|Shri|Sri|Prof)\.?"
+            + _WORD_GAP
+            + rf"({_NAME_VALUE})"
         ),
         base_confidence=0.8,
         value_group=1,
@@ -397,8 +421,11 @@ BUILTIN_RULES: Final[list[Rule]] = [
         entity_type="PERSON",
         name="person-labelled",
         pattern=(
-            r"\b(?i:patients?|beneficiary|account\s+holder|referring)\s*"
-            rf"(?i:name)?\s*[:\-]?\s*({_NAME_VALUE})"
+            r"\b(?i:patients?|beneficiary|account"
+            + _WORD_GAP
+            + r"holder|referring)"
+            + _LABEL_GAP
+            + rf"(?i:name)?{_NAME_SEPARATOR}({_NAME_VALUE})"
         ),
         base_confidence=0.78,
         value_group=1,
@@ -408,7 +435,7 @@ BUILTIN_RULES: Final[list[Rule]] = [
     _rule(
         entity_type="PERSON",
         name="person-after-preposition",
-        pattern=rf"\b(?i:for|of)\s+({_NAME_VALUE_MULTI})",
+        pattern=rf"\b(?i:for|of){_WORD_GAP}({_NAME_VALUE_MULTI})",
         base_confidence=0.6,
         value_group=1,
         case_sensitive=True,

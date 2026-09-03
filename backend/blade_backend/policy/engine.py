@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from blade_backend.policy.defaults import BUILTIN_POLICY_SET
+from blade_backend.policy.defaults import (
+    BUILTIN_POLICY_SET,
+    UNSCANNED_ATTACHMENT_RULE,
+)
 from blade_backend.policy.models import (
     ACTION_RANK,
     SEVERITY_RANK,
@@ -36,6 +39,7 @@ class ScanFacts:
     recipient_classes: tuple[RecipientClass, ...]
     sender_class: SenderClass
     has_attachments: bool
+    attachments_unscanned: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +59,7 @@ def build_facts(
     recipient_classes: list[RecipientClass],
     sender_class: SenderClass,
     has_attachments: bool,
+    attachments_unscanned: int = 0,
 ) -> ScanFacts:
     distinct = {(entity_type, value) for entity_type, value in entities}
     subjects = {
@@ -71,10 +76,11 @@ def build_facts(
         recipient_classes=tuple(recipient_classes),
         sender_class=sender_class,
         has_attachments=has_attachments,
+        attachments_unscanned=attachments_unscanned,
     )
 
 
-def _matches(rule: PolicyRule, facts: ScanFacts) -> bool:  # noqa: PLR0911
+def _matches(rule: PolicyRule, facts: ScanFacts) -> bool:  # noqa: PLR0911, PLR0912
     conditions = rule.conditions
 
     if conditions.entity_types_any and not (facts.entity_types & set(conditions.entity_types_any)):
@@ -89,6 +95,11 @@ def _matches(rule: PolicyRule, facts: ScanFacts) -> bool:  # noqa: PLR0911
     if (
         conditions.min_subject_count is not None
         and facts.distinct_subject_count < conditions.min_subject_count
+    ):
+        return False
+    if (
+        conditions.min_unscanned_attachments is not None
+        and facts.attachments_unscanned < conditions.min_unscanned_attachments
     ):
         return False
     if conditions.min_risk_score is not None and facts.risk_score < conditions.min_risk_score:
@@ -124,6 +135,13 @@ def _raise_severity(current: Severity, floor: Severity | None) -> Severity:
 
 def evaluate(facts: ScanFacts, policy_set: PolicySet | None = None) -> PolicyDecision:
     resolved = policy_set or BUILTIN_POLICY_SET
+    decision = _first_match(facts, resolved)
+    if facts.attachments_unscanned and decision.action == "allow":
+        return _unscanned_attachment_decision(facts, resolved)
+    return decision
+
+
+def _first_match(facts: ScanFacts, resolved: PolicySet) -> PolicyDecision:
     for rule in resolved.ordered():
         if not _matches(rule, facts):
             continue
@@ -145,6 +163,25 @@ def evaluate(facts: ScanFacts, policy_set: PolicySet | None = None) -> PolicyDec
             if facts.distinct_entity_count
             else ""
         ),
+    )
+
+
+def _unscanned_attachment_decision(facts: ScanFacts, resolved: PolicySet) -> PolicyDecision:
+    rule = next(
+        (
+            candidate
+            for candidate in resolved.ordered()
+            if candidate.conditions.min_unscanned_attachments is not None
+            and _matches(candidate, facts)
+        ),
+        UNSCANNED_ATTACHMENT_RULE,
+    )
+    return PolicyDecision(
+        action=strongest([rule.action, UNSCANNED_ATTACHMENT_RULE.action]),
+        severity=_raise_severity(facts.severity, rule.min_reported_severity),
+        risk_score=facts.risk_score,
+        matched_policy_ids=[rule.id],
+        user_message=rule.user_message or UNSCANNED_ATTACHMENT_RULE.user_message,
     )
 
 

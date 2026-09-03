@@ -1,14 +1,14 @@
-# Auro Healthcare DLP
+# Blade
 
 Healthcare data-loss prevention for the browser. One Chrome extension enforces two
 separate paths, and one FastAPI backend keeps the policy, the analytics and the
 audit log.
 
 **Path 1, Gmail send-time scanning.** A content script on `mail.google.com`
-intercepts every send path, uploads the subject, body, recipients and supported
-attachments to the backend, and applies the organization's policy before Gmail
-transmits anything. Verdicts are `allow`, `warn`, `quarantine`, `block` and
-`escalate`.
+intercepts every send path and hands the subject, body, recipients and supported
+attachments to the extension's service worker, which sends them to the backend.
+The organization's policy is applied before Gmail transmits anything. Verdicts
+are `allow`, `warn`, `quarantine`, `block` and `escalate`.
 
 **Path 2, universal web input protection.** A second content script runs on every
 other `http://` and `https://` page and stops patient data being pasted or typed
@@ -26,7 +26,7 @@ offline guard and the server agree by construction rather than by discipline.
 ## Repository
 
 ```
-aurodlpv2/
+blade/
   backend/      FastAPI + Postgres + Celery                 (Python 3.12, uv)
   detection/    PHI/PII detection engine, imported by the backend
   frontend/     pnpm workspace                              (Node 20, pnpm 9)
@@ -85,7 +85,7 @@ Detection is not on that list. `backend/pyproject.toml` takes a path dependency 
 
 ```bash
 git clone <repo>
-cd aurodlpv2
+cd blade
 
 make dev-up                 # postgres, redis, minio, jaeger, mailhog
 make install                # uv sync backend + detection, pnpm install
@@ -176,10 +176,13 @@ the guard fails closed on a paste it cannot check in time.
 
 ## Reporting a web block
 
-A content script on an arbitrary site cannot POST to the backend: the request
-carries that site's origin and CORS refuses it. The block is therefore relayed
-to the extension's MV3 service worker, which runs in the extension's own context
-where the `host_permissions` entry for the backend origin applies.
+A content script cannot POST to the backend: the request carries the origin of
+the page it runs in, and the backend CORS allowlist refuses it. The block is
+therefore relayed to the extension's MV3 service worker, which runs in the
+extension's own context where the `host_permissions` entry for the backend
+origin applies. The Gmail path is subject to the same rule, so its event report,
+attachment upload, attachment status poll, scan finalize and quarantine status
+poll all go through the worker as well.
 
 The service worker posts to `POST /api/v1/events` with `channel: "web"` and
 `site_host: "<hostname>"`. The backend stores `channel` and `site_host` on
@@ -216,9 +219,19 @@ does not leave a send unchecked.
 | Images: `.png`, `.jpg`, `.tiff` and similar | yes, via OCR | no |
 
 Files are classified by content signature, so renaming one does not skip the
-scan. Attachments larger than 25 MB are skipped. CSV and spreadsheet rows are
-rendered with each value carrying its column header, so a `UHID` header still
-reaches the value forty rows below it.
+scan. CSV and spreadsheet rows are rendered with each value carrying its column
+header, so a `UHID` header still reaches the value forty rows below it.
+
+An attachment that cannot be read is never treated as an attachment that
+contains nothing. Anything the engine could not open, decrypt or read to the end
+(a password-protected PDF, a corrupt file, a document truncated at a page, cell
+or archive-member cap, an attachment over 25 MB) is reported as an extraction
+error, the row is recorded as `partial` or `failed` rather than `scanned`, and
+the verdict comes back `degraded` with the builtin `unscannable-attachment` rule
+applied so it can never settle as a silent allow. The extension's local fallback
+does the same: every format in the `no` column above, and every file it cannot
+read to the end, counts as unchecked and produces a warning or a block rather
+than a pass.
 
 ## Enforcement scope, honestly
 

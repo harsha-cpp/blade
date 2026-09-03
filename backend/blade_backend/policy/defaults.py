@@ -4,7 +4,21 @@ from typing import Final
 
 from blade_backend.policy.models import PolicyRule, PolicySet, RuleConditions
 
-BUILTIN_POLICY_VERSION: Final[str] = "builtin-2026.08"
+BUILTIN_POLICY_VERSION: Final[str] = "builtin-2026.09"
+
+UNSCANNED_ATTACHMENT_RULE: Final[PolicyRule] = PolicyRule(
+    id="unscannable-attachment",
+    description=(
+        "An attachment could not be read, so it was never checked for patient "
+        "data. An unread attachment is not a clean attachment, so this can never "
+        "settle as a silent allow."
+    ),
+    order=990,
+    conditions=RuleConditions(min_unscanned_attachments=1),
+    action="warn",
+    min_reported_severity="medium",
+    user_message="One or more attachments could not be checked.",
+)
 
 BUILTIN_RULES: Final[list[PolicyRule]] = [
     PolicyRule(
@@ -110,6 +124,7 @@ BUILTIN_RULES: Final[list[PolicyRule]] = [
             "Possible patient data addressed outside the approved list. Review before sending."
         ),
     ),
+    UNSCANNED_ATTACHMENT_RULE,
     PolicyRule(
         id="low-confidence-phi",
         description="Something was detected but weakly. Warn quietly rather than block.",

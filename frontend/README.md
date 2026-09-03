@@ -1,4 +1,4 @@
-# aurodlpv2-frontend
+# blade-frontend
 
 pnpm workspace with three packages.
 

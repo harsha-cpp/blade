@@ -21,6 +21,7 @@ def _decide(
     recipients: list[RecipientClass] | None = None,
     sender: SenderClass = "internal",
     attachments: bool = False,
+    attachments_unscanned: int = 0,
     policy_set: PolicySet | None = None,
 ):
     facts = build_facts(
@@ -30,6 +31,7 @@ def _decide(
         recipient_classes=recipients if recipients is not None else ["internal"],
         sender_class=sender,
         has_attachments=attachments,
+        attachments_unscanned=attachments_unscanned,
     )
     return evaluate(facts, policy_set)
 
@@ -220,3 +222,80 @@ def test_every_builtin_rule_has_a_stable_id_and_message(rule: PolicyRule) -> Non
 def test_builtin_rule_ids_are_unique() -> None:
     ids = [rule.id for rule in BUILTIN_POLICY_SET.rules]
     assert len(ids) == len(set(ids))
+
+
+def test_an_unreadable_attachment_never_settles_as_a_silent_allow() -> None:
+    clean = _decide(attachments=True)
+    assert clean.action == "allow"
+
+    degraded = _decide(attachments=True, attachments_unscanned=1)
+    assert degraded.action == "warn"
+    assert degraded.matched_policy_ids == ["unscannable-attachment"]
+    assert degraded.user_message == "One or more attachments could not be checked."
+    assert degraded.severity == "medium"
+
+
+def test_an_unreadable_attachment_never_weakens_a_stronger_verdict() -> None:
+    quarantined = _decide(
+        entities=[("IN_AADHAAR", "****7460")],
+        risk=80,
+        severity="high",
+        recipients=["public_email"],
+        attachments=True,
+        attachments_unscanned=1,
+    )
+    assert quarantined.action == "quarantine"
+    assert quarantined.matched_policy_ids == ["high-risk-phi-to-public-email"]
+
+
+def test_a_stored_policy_without_the_new_condition_still_evaluates() -> None:
+    stored = PolicySet.model_validate(
+        {
+            "version": "ward-policy-v3",
+            "rules": [
+                {
+                    "id": "allow-everything",
+                    "order": 10,
+                    "conditions": {"max_risk_score": 100},
+                    "action": "allow",
+                    "user_message": "",
+                }
+            ],
+        }
+    )
+
+    assert stored.rules[0].conditions.min_unscanned_attachments is None
+
+    clean = _decide(policy_set=stored)
+    assert clean.action == "allow"
+    assert clean.matched_policy_ids == ["allow-everything"]
+
+    degraded = _decide(policy_set=stored, attachments=True, attachments_unscanned=1)
+    assert degraded.action == "warn"
+    assert degraded.matched_policy_ids == ["unscannable-attachment"]
+
+
+def test_an_organization_can_hold_unreadable_attachments_for_review() -> None:
+    strict = PolicySet(
+        version="strict",
+        rules=[
+            PolicyRule(
+                id="hold-unreadable-attachments",
+                order=10,
+                conditions=RuleConditions(min_unscanned_attachments=1),
+                action="quarantine",
+                min_reported_severity="high",
+                user_message="An unreadable attachment is held for review.",
+            ),
+            PolicyRule(
+                id="allow-everything",
+                order=20,
+                conditions=RuleConditions(max_risk_score=100),
+                action="allow",
+            ),
+        ],
+    )
+
+    decision = _decide(policy_set=strict, attachments=True, attachments_unscanned=1)
+    assert decision.action == "quarantine"
+    assert decision.matched_policy_ids == ["hold-unreadable-attachments"]

@@ -1,6 +1,6 @@
 # blade-backend
 
-FastAPI service for the Auro Healthcare DLP platform: multi-tenant auth, the
+FastAPI service for the Blade platform: multi-tenant auth, the
 policy engine, server-side scanning, quarantine, the audit log, and scan-event
 ingestion and analytics.
 

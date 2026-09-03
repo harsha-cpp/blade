@@ -163,6 +163,7 @@ export function describeConditions(conditions: RuleConditions): string[] {
     entity_types_all,
     min_entity_count,
     min_subject_count,
+    min_unscanned_attachments,
     min_risk_score,
     max_risk_score,
     min_severity,
@@ -182,6 +183,10 @@ export function describeConditions(conditions: RuleConditions): string[] {
     );
   if (min_subject_count != null)
     out.push(`at least ${min_subject_count} distinct patients`);
+  if (min_unscanned_attachments != null)
+    out.push(
+      `at least ${min_unscanned_attachments} attachment${min_unscanned_attachments === 1 ? "" : "s"} could not be checked`,
+    );
   if (min_risk_score != null) out.push(`risk ≥ ${min_risk_score}`);
   if (max_risk_score != null) out.push(`risk ≤ ${max_risk_score}`);
   if (min_severity)

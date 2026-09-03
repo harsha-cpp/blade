@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 
+from PIL import Image
+
 from blade_detection.config import DetectionConfig
-from blade_detection.extractors import extract_attachment
+from blade_detection.extractors import OcrImageSource, extract_attachment
+from blade_detection.extractors.budget import ExtractionBudget
 from blade_detection.models import EmailPayload, Entity, EntitySource, ScanResult
 from blade_detection.ocr import extract_text as extract_ocr_text
 from blade_detection.recognition import analyze
@@ -28,9 +32,10 @@ def detect_email(
     ]
     extraction_errors: list[str] = []
     ocr_pages = 0
+    budget = ExtractionBudget()
 
     for attachment in payload.attachments:
-        extraction = extract_attachment(attachment)
+        extraction = extract_attachment(attachment, budget=budget)
         extraction_errors.extend(extraction.errors)
         if extraction.text:
             entities.extend(
@@ -42,13 +47,15 @@ def detect_email(
                     rule_pack=rule_pack,
                 )
             )
-        if extraction.ocr_images:
+        if extraction.ocr_sources:
+            unreadable: list[str] = []
             ocr_result = extract_ocr_text(
-                extraction.ocr_images,
+                _loaded_images(attachment.id, extraction.ocr_sources, unreadable),
                 resolved_config,
                 deadline=deadline,
             )
             ocr_pages += ocr_result.pages
+            extraction_errors.extend(unreadable)
             extraction_errors.extend(f"{attachment.id}: {error}" for error in ocr_result.errors)
             if ocr_result.text:
                 entities.extend(
@@ -71,6 +78,19 @@ def detect_email(
         extraction_errors=extraction_errors,
         completed_at=datetime.now(UTC),
     )
+
+
+def _loaded_images(
+    attachment_id: str,
+    sources: list[OcrImageSource],
+    unreadable: list[str],
+) -> Iterator[Image.Image]:
+    for source in sources:
+        loaded = source.load()
+        if loaded is None:
+            unreadable.append(f"{attachment_id}: {source.unreadable_issue}")
+            continue
+        yield loaded
 
 
 def _detect(

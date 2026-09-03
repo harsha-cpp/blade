@@ -67,6 +67,7 @@ router = APIRouter()
 
 _ORG_CODE_BYTES = 18
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_SWITCH_DENIED_DETAIL = "no verified active membership in that org"
 
 __all__ = ["AuthResponse", "MemberView", "OrganizationView", "router"]
 
@@ -438,19 +439,29 @@ async def revoke_all_sessions(
     return response
 
 
-@router.post("/switch-org", response_model=AuthResponse)
+@router.post(
+    "/switch-org",
+    response_model=AuthResponse | MfaChallengeResponse,
+    response_model_exclude_none=True,
+)
 async def switch_org(
     payload: SwitchOrgRequest,
     member: CurrentMember,
     response: Response,
     request: Request,
     session: DbSession,
-) -> AuthResponse:
+) -> AuthResponse | MfaChallengeResponse:
     """Move the session to another org the same email belongs to.
 
     Switching used to mean logging in again, so staff who cover two hospitals
-    re-typed their password all day and learned to pick a weak one.
+    re-typed their password all day and learned to pick a weak one. An address
+    on its own proves nothing, because anyone may sign up an organization
+    naming somebody else: both the calling membership and the target membership
+    must have a verified email, or the call is refused. A target membership
+    with MFA enabled returns the same challenge as `POST /auth/login`, and the
+    session is only issued once `POST /auth/mfa/verify` accepts a code.
     """
+    caller = await session.get(OrgMember, member.member_id)
     target = await session.scalar(
         select(OrgMember).where(
             OrgMember.org_id == payload.org_id,
@@ -458,13 +469,29 @@ async def switch_org(
             OrgMember.status == "active",
         )
     )
-    if target is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="no active membership in that org")
+    if caller is None or caller.email_verified_at is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_SWITCH_DENIED_DETAIL)
+    if target is None or target.email_verified_at is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_SWITCH_DENIED_DETAIL)
     org = await session.get(Organization, target.org_id)
     if org is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="organization missing")
 
-    mfa_enabled = await _mfa_enabled(session, target.id)
+    if await _mfa_enabled(session, target.id):
+        await write_audit_event(
+            session,
+            org_id=org.id,
+            actor=f"member:{member.email}",
+            category="auth",
+            action="org_switch_mfa_challenged",
+            metadata={"from_org_id": str(member.org_id)},
+        )
+        await session.commit()
+        return MfaChallengeResponse(
+            challenge_token=issue_challenge_token(target.id, org.id),
+            expires_in=CHALLENGE_TTL_SECONDS,
+        )
+
     await write_audit_event(
         session,
         org_id=org.id,
@@ -473,9 +500,7 @@ async def switch_org(
         action="org_switched",
         metadata={"from_org_id": str(member.org_id)},
     )
-    return await issue_session(
-        session, response, target, org, request=request, mfa_enabled=mfa_enabled
-    )
+    return await issue_session(session, response, target, org, request=request)
 
 
 @router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -562,6 +587,12 @@ async def reset_password(payload: ResetPasswordRequest, session: DbSession) -> R
 
 @router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
 async def verify_email(payload: VerifyEmailRequest, session: DbSession) -> Response:
+    """Mark the membership the token was issued for as verified.
+
+    Verification is per membership and never spreads to other organizations
+    using the same address, because those memberships may have been created by
+    somebody else who merely typed the address in.
+    """
     now = datetime.now(UTC)
     try:
         token_id, secret = parse_token(EMAIL_VERIFY_PREFIX, payload.token.strip())
@@ -586,12 +617,8 @@ async def verify_email(payload: VerifyEmailRequest, session: DbSession) -> Respo
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid verification token")
 
     record.used_at = now
-    siblings = (
-        await session.scalars(select(OrgMember).where(OrgMember.email == member.email))
-    ).all()
-    for sibling in siblings:
-        if sibling.email_verified_at is None:
-            sibling.email_verified_at = now
+    if member.email_verified_at is None:
+        member.email_verified_at = now
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -637,12 +664,21 @@ class OrgListItem(BaseModel):
 
 @router.get("/my-orgs", response_model=list[OrgListItem])
 async def my_orgs(member: CurrentMember, session: DbSession) -> list[OrgListItem]:
-    """List organizations for the authenticated member's email."""
+    """List the organizations the caller can switch into.
+
+    Empty until the caller's own address is verified, and it lists only active
+    memberships that are themselves verified, so an organization signed up in
+    somebody else's name never appears in their switcher.
+    """
+    caller = await session.get(OrgMember, member.member_id)
+    if caller is None or caller.email_verified_at is None:
+        return []
     members = (
         await session.scalars(
             select(OrgMember).where(
                 OrgMember.email == member.email,
                 OrgMember.status == "active",
+                OrgMember.email_verified_at.is_not(None),
             )
         )
     ).all()

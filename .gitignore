@@ -79,6 +79,10 @@ Thumbs.db
 .sisyphus/
 .kiro/
 
+# Local agent config and internal docs — not part of the published tree
+.claude/
+docs/
+
 # Attachment scratch
 tmp/
 /tmp-medshield/

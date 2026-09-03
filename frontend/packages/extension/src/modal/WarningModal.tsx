@@ -99,8 +99,8 @@ export default function WarningModal({
 
         {verdict.degraded ? (
           <p className="blade-notice">
-            Blade could not reach the server, so this decision was made locally
-            with a smaller rule set. It may be stricter than usual.
+            Part of this message could not be checked, so this decision was made
+            with incomplete information. It may be stricter than usual.
           </p>
         ) : null}
         {verdict.action === "quarantine" && pollError ? (

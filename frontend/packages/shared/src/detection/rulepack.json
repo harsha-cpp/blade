@@ -174,7 +174,7 @@
     {
       "entityType": "MRN",
       "name": "mrn-labelled",
-      "pattern": "(?:UHIDs?|MRNs?|M\\.R\\.N|Medical\\s+Record(?:\\s+(?:No|Number))?|Hospital\\s+No|Patient\\s+ID|Patient\\s+No|Reg(?:istration)?\\s+No)\\.?\\s*[:#-]?\\s*((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})",
+      "pattern": "(?:UHIDs?|MRNs?|M\\.R\\.N|Medical\\s{1,4}Record(?:\\s{1,4}(?:No|Number))?|Hospital\\s{1,4}No|Patient\\s{1,4}ID|Patient\\s{1,4}No|Reg(?:istration)?\\s{1,4}No)\\.?[ \\t]{0,8}[:#-]?\\s{0,8}((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})",
       "baseConfidence": 0.85,
       "validator": null,
       "contextTerms": [],
@@ -186,7 +186,7 @@
       "priority": 55,
       "valueGroup": 1,
       "caseSensitive": false,
-      "continuation": "\\s*(?:,|and|through|to)\\s*((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})"
+      "continuation": "\\s{0,8}(?:,|and|through|to)\\s{0,8}((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})"
     },
     {
       "entityType": "MRN",
@@ -281,7 +281,7 @@
     {
       "entityType": "PATIENT_VISIT_ID",
       "name": "visit-id-labelled",
-      "pattern": "(?:IP|OP|IPD|OPD|Admission|Visit|Encounter)\\s*(?:No|Number|ID)\\.?\\s*[:#-]?\\s*((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})",
+      "pattern": "(?:IP|OP|IPD|OPD|Admission|Visit|Encounter)\\s{0,8}(?:No|Number|ID)\\.?[ \\t]{0,8}[:#-]?\\s{0,8}((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})",
       "baseConfidence": 0.8,
       "validator": null,
       "contextTerms": [],
@@ -293,12 +293,12 @@
       "priority": 58,
       "valueGroup": 1,
       "caseSensitive": false,
-      "continuation": "\\s*(?:,|and|through|to)\\s*((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})"
+      "continuation": "\\s{0,8}(?:,|and|through|to)\\s{0,8}((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})"
     },
     {
       "entityType": "LAB_ACCESSION",
       "name": "lab-accession-labelled",
-      "pattern": "(?:accession|specimen\\s*(?:no|id)?|sample\\s*(?:no|id|accession))\\.?\\s*[:#-]?\\s*((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})",
+      "pattern": "(?:accession|specimen[ \\t]{0,8}(?:no|id)?|sample[ \\t]{0,8}(?:no|id|accession))\\.?[ \\t]{0,8}[:#-]?\\s{0,8}((?=[A-Za-z0-9/-]*\\d{2})[A-Za-z0-9][A-Za-z0-9/-]{3,20})",
       "baseConfidence": 0.8,
       "validator": null,
       "contextTerms": [],
@@ -495,7 +495,7 @@
     {
       "entityType": "MEDICAL_LICENSE",
       "name": "practitioner-registration",
-      "pattern": "(?:(?:medical|nursing|dental)\\s+council\\s*)?reg(?:istration)?\\.?\\s*(?:no|number)\\.?\\s*[:#-]?\\s*([A-Z]{0,3}[-/]?\\d{4,8})",
+      "pattern": "(?:(?:medical|nursing|dental)\\s{1,4}council\\s{0,8})?reg(?:istration)?\\.?\\s{0,8}(?:no|number)\\.?[ \\t]{0,8}[:#-]?\\s{0,8}([A-Z]{0,3}[-/]?\\d{4,8})",
       "baseConfidence": 0.6,
       "validator": null,
       "contextTerms": [
@@ -549,7 +549,7 @@
     {
       "entityType": "INSURANCE_POLICY",
       "name": "policy-labelled",
-      "pattern": "(?:[pP][oO][lL][iI][cC][yY])\\s*(?:[nN][oO]|[nN][uU][mM][bB][eE][rR])?\\.?\\s*[:#-]?\\s*((?=[A-Z0-9/-]*\\d)[A-Z0-9][A-Z0-9/-]{5,30})",
+      "pattern": "(?:[pP][oO][lL][iI][cC][yY])\\s{0,8}(?:[nN][oO]|[nN][uU][mM][bB][eE][rR])?\\.?[ \\t]{0,8}[:#-]?\\s{0,8}((?=[A-Z0-9/-]*\\d)[A-Z0-9][A-Z0-9/-]{5,30})",
       "baseConfidence": 0.85,
       "validator": null,
       "contextTerms": [],
@@ -566,7 +566,7 @@
     {
       "entityType": "INSURANCE_POLICY",
       "name": "claim-labelled",
-      "pattern": "(?:[cC][lL][aA][iI][mM])\\s*(?:[nN][oO]|[nN][uU][mM][bB][eE][rR]|[iI][dD]|[rR][eE][fF])?\\.?\\s*[:#-]?\\s*((?=[A-Z0-9/-]*\\d)[A-Z0-9][A-Z0-9/-]{5,30})",
+      "pattern": "(?:[cC][lL][aA][iI][mM])\\s{0,8}(?:[nN][oO]|[nN][uU][mM][bB][eE][rR]|[iI][dD]|[rR][eE][fF])?\\.?[ \\t]{0,8}[:#-]?\\s{0,8}((?=[A-Z0-9/-]*\\d)[A-Z0-9][A-Z0-9/-]{5,30})",
       "baseConfidence": 0.8,
       "validator": null,
       "contextTerms": [],
@@ -650,7 +650,7 @@
     {
       "entityType": "DATE_OF_BIRTH",
       "name": "dob-labelled",
-      "pattern": "(?:D\\.?O\\.?B\\.?|date\\s+of\\s+birth|born\\s+on|birth\\s*date)[^\\n]{0,25}?(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4})",
+      "pattern": "(?:D\\.?O\\.?B\\.?|date\\s{1,4}of\\s{1,4}birth|born\\s{1,4}on|birth\\s{0,4}date)[^\\n]{0,25}?(\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{1,2}\\s{1,4}[A-Za-z]{3,9}\\s{1,4}\\d{4})",
       "baseConfidence": 0.85,
       "validator": null,
       "contextTerms": [],
@@ -751,7 +751,7 @@
     {
       "entityType": "PERSON",
       "name": "person-titled",
-      "pattern": "\\b(?:[mM][rR]|[mM][rR][sS]|[mM][sS]|[mM][iI][sS][sS]|[dD][rR]|[dD][oO][cC][tT][oO][rR]|[mM][aA][sS][tT][eE][rR]|[bB][aA][bB][yY]|[sS][mM][tT]|[sS][hH][rR][iI]|[sS][rR][iI]|[pP][rR][oO][fF])\\.?\\s+((?:[A-Z]\\.?\\s+)?[A-Z][a-z]{1,}(?:\\s+[A-Z][a-z]{1,}){0,3})",
+      "pattern": "\\b(?:[mM][rR]|[mM][rR][sS]|[mM][sS]|[mM][iI][sS][sS]|[dD][rR]|[dD][oO][cC][tT][oO][rR]|[mM][aA][sS][tT][eE][rR]|[bB][aA][bB][yY]|[sS][mM][tT]|[sS][hH][rR][iI]|[sS][rR][iI]|[pP][rR][oO][fF])\\.?\\s{1,4}((?:[A-Z]\\.?\\s{1,4})?[A-Z][a-z]{1,}(?:\\s{1,4}[A-Z][a-z]{1,}){0,3})",
       "baseConfidence": 0.8,
       "validator": null,
       "contextTerms": [],
@@ -768,7 +768,7 @@
     {
       "entityType": "PERSON",
       "name": "person-labelled",
-      "pattern": "\\b(?:[pP][aA][tT][iI][eE][nN][tT][sS]?|[bB][eE][nN][eE][fF][iI][cC][iI][aA][rR][yY]|[aA][cC][cC][oO][uU][nN][tT]\\s+[hH][oO][lL][dD][eE][rR]|[rR][eE][fF][eE][rR][rR][iI][nN][gG])\\s*(?:[nN][aA][mM][eE])?\\s*[:\\-]?\\s*((?:[A-Z]\\.?\\s+)?[A-Z][a-z]{1,}(?:\\s+[A-Z][a-z]{1,}){0,3})",
+      "pattern": "\\b(?:[pP][aA][tT][iI][eE][nN][tT][sS]?|[bB][eE][nN][eE][fF][iI][cC][iI][aA][rR][yY]|[aA][cC][cC][oO][uU][nN][tT]\\s{1,4}[hH][oO][lL][dD][eE][rR]|[rR][eE][fF][eE][rR][rR][iI][nN][gG])\\s{0,8}(?:[nN][aA][mM][eE])?[ \\t]{0,8}[:\\-]?\\s{0,8}((?:[A-Z]\\.?\\s{1,4})?[A-Z][a-z]{1,}(?:\\s{1,4}[A-Z][a-z]{1,}){0,3})",
       "baseConfidence": 0.78,
       "validator": null,
       "contextTerms": [],
@@ -785,7 +785,7 @@
     {
       "entityType": "PERSON",
       "name": "person-after-preposition",
-      "pattern": "\\b(?:[fF][oO][rR]|[oO][fF])\\s+((?:[A-Z]\\.?\\s+)?[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,}){1,3})",
+      "pattern": "\\b(?:[fF][oO][rR]|[oO][fF])\\s{1,4}((?:[A-Z]\\.?\\s{1,4})?[A-Z][a-z]{2,}(?:\\s{1,4}[A-Z][a-z]{2,}){1,3})",
       "baseConfidence": 0.6,
       "validator": null,
       "contextTerms": [],

@@ -16,7 +16,6 @@ export default function LogoStrip() {
           works with:
         </p>
 
-        {/* phone: a marquee, since the row can't fit. tablet+: a static spread. */}
         <div className="w-full overflow-clip tab:hidden">
           <div className="flex w-max animate-[marquee_28s_linear_infinite] items-center gap-10 opacity-50">
             {[0, 1].map((copy) => (

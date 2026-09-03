@@ -1,4 +1,6 @@
 import { BACKEND_URL } from "../config";
+import { parseBackendRequest } from "../messages";
+import { handleBackendRequest } from "./backend-bridge";
 import {
   WEB_BLOCK_MESSAGE,
   webBlockKey,
@@ -144,7 +146,6 @@ async function refresh(): Promise<void> {
   } else if (configResult.status === "not_found") {
     await chrome.storage.local.remove("blade_config");
   }
-  // Transient network/server failures keep only same-org cached config.
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -173,7 +174,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return false;
   if (message?.type === "REFRESH_CONFIG") {
     void refresh().then(() => sendResponse({ ok: true }));
     return true;
@@ -182,6 +184,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     void reportWebBlock(message as WebBlockReport).then(() =>
       sendResponse({ ok: true }),
     );
+    return true;
+  }
+  const backendRequest = parseBackendRequest(message);
+  if (backendRequest) {
+    void handleBackendRequest(backendRequest).then(sendResponse);
     return true;
   }
   return false;

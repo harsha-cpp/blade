@@ -114,8 +114,17 @@ class Settings(BaseSettings):
     s3_server_side_encryption: str | None = Field(default="AES256")
 
     scan_max_concurrency: int = Field(default=4, ge=1, le=64)
+    scan_process_pool_enabled: bool = Field(default=True)
+    scan_deadline_seconds: float = Field(default=8.0, gt=0, le=600)
+    scan_worker_max_tasks: int = Field(default=100, ge=1, le=100_000)
+    scan_max_attachment_bytes: int = Field(default=26_214_400, ge=1024, le=1_073_741_824)
     scan_rate_limit_per_device_per_minute: int = Field(default=60, ge=1)
     scan_rate_limit_per_org_per_minute: int = Field(default=600, ge=1)
+
+    api_max_request_bytes: int = Field(default=2_097_152, ge=1024, le=1_073_741_824)
+
+    celery_task_soft_time_limit: int = Field(default=300, ge=1, le=86_400)
+    celery_task_time_limit: int = Field(default=330, ge=2, le=86_400)
 
     sentry_dsn: str | None = Field(default=None)
 
@@ -149,6 +158,15 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.strip().lower()
         return value
+
+    @model_validator(mode="after")
+    def enforce_task_time_limits(self) -> Settings:
+        if self.celery_task_time_limit <= self.celery_task_soft_time_limit:
+            raise ValueError(
+                "CELERY_TASK_TIME_LIMIT must be greater than CELERY_TASK_SOFT_TIME_LIMIT: "
+                "the soft limit exists so the task can record a failure before it is killed"
+            )
+        return self
 
     @model_validator(mode="after")
     def enforce_production_security(self) -> Settings:

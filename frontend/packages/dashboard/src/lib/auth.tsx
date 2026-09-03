@@ -19,6 +19,7 @@ import {
   type Organization,
   type LoginBody,
   type SignupBody,
+  type SwitchOrgResult,
 } from "../api/auth";
 import { setAccessToken, setOnAuthLost, refreshSession } from "./api";
 import { can, type Capability } from "./roles";
@@ -36,7 +37,7 @@ interface AuthCtx extends AuthState {
   signup: (body: SignupBody) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  switchOrg: (orgId: string) => Promise<void>;
+  switchOrg: (orgId: string) => Promise<MfaChallenge | null>;
   can: (capability: Capability) => boolean;
 }
 
@@ -144,12 +145,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const switchOrg = useCallback(
-    async (orgId: string) => {
-      const res = await authApi.switchOrg(orgId);
+    async (orgId: string): Promise<MfaChallenge | null> => {
+      const res: SwitchOrgResult = await authApi.switchOrg(orgId);
+      if (isMfaChallenge(res)) return res;
       queryClient.clear();
       const next = applyAuth(res);
       writeShellRole(next.member.role);
       setState({ status: "authenticated", ...next });
+      return null;
     },
     [queryClient],
   );

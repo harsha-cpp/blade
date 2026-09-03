@@ -14,7 +14,12 @@ from blade_backend.api.v1.router import api_v1_router
 from blade_backend.db.session import close_engine
 from blade_backend.health import ReadinessProbe, build_readiness_probe
 from blade_backend.observability.logging import configure_logging
-from blade_backend.observability.security import RateLimitMiddleware, SecurityHeadersMiddleware
+from blade_backend.observability.security import (
+    RateLimitMiddleware,
+    RequestSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
+from blade_backend.scan.runner import shutdown_detection_pool
 from blade_backend.settings import Settings, get_settings
 
 ReadyzHandler = Callable[[], Awaitable[JSONResponse]]
@@ -32,6 +37,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await asyncio.to_thread(ensure_private_dir, settings.attachment_temp_dir)
     await asyncio.to_thread(ensure_private_dir, settings.quarantine_storage_dir)
     yield
+    await asyncio.to_thread(shutdown_detection_pool)
     await close_engine()
 
 
@@ -74,6 +80,7 @@ def create_app(
     )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware)
 
     app.include_router(api_v1_router, prefix="/api/v1")
     app.add_api_route("/healthz", healthz, methods=["GET"], tags=["meta"])

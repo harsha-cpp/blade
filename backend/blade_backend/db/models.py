@@ -31,7 +31,7 @@ DomainClass = Literal["internal", "partner", "blocked"]
 EventAction = Literal["allow", "warn", "block", "quarantine", "escalate"]
 EventSeverity = Literal["none", "low", "medium", "high", "critical"]
 EventChannel = Literal["email", "web"]
-AttachmentScanStatus = Literal["scanned", "queued", "failed"]
+AttachmentScanStatus = Literal["scanned", "partial", "queued", "failed"]
 QuarantineStatus = Literal["pending", "approved", "rejected"]
 UserRole = MemberRole
 
@@ -315,7 +315,7 @@ class AttachmentScan(Base):
     __tablename__ = "attachment_scans"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('scanned','queued','failed')",
+            "status IN ('scanned','partial','queued','failed')",
             name="ck_attachment_scans_status",
         ),
         CheckConstraint(

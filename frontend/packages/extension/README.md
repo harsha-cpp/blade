@@ -1,4 +1,4 @@
-# Auro Chrome extension
+# Blade Chrome extension
 
 One MV3 extension with two independent content scripts and one service worker.
 
@@ -112,7 +112,7 @@ never sent. See [`../../../docs/privacy.md`](../../../docs/privacy.md).
 
 | Variable | Default (dev) | Default (production build) | Purpose |
 |---|---|---|---|
-| `VITE_BACKEND_URL` | `http://localhost:8000` | `https://api.aurodlpv2.io` | Origin of the Auro backend. |
+| `VITE_BACKEND_URL` | `http://localhost:8000` | `https://api.bladedlp.io` | Origin of the Blade backend. |
 
 `VITE_BACKEND_URL` is read at build time in one place, `src/backend-url.ts`, and
 feeds two things that must never disagree:

@@ -1,6 +1,6 @@
 # blade-detection
 
-Pure-Python PHI/PII detection engine for the Auro Healthcare DLP platform.
+Pure-Python PHI/PII detection engine for the Blade platform.
 
 This is a library, not a service. The backend imports it in-process through a
 path dependency; nothing deploys it on its own.

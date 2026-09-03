@@ -27,8 +27,6 @@ import psycopg
 
 from blade_backend.settings import get_settings
 
-# Arbitrary but fixed: any 64-bit int works as long as every deployer of this
-# application uses the same one.
 ADVISORY_LOCK_KEY = 0x4155524F_444C5001
 
 BACKEND_DIR = Path("/app/backend")
@@ -48,7 +46,9 @@ def dsn() -> str:
     )
 
 
-def wait_for_database(timeout: int = DEFAULT_WAIT_SECONDS) -> psycopg.Connection[object]:
+def wait_for_database(
+    timeout: int = DEFAULT_WAIT_SECONDS,
+) -> psycopg.Connection[object]:
     deadline = time.monotonic() + timeout
     attempt = 0
     while True:
@@ -68,8 +68,6 @@ def upgrade_head() -> int:
     try:
         connection.autocommit = True
         with connection.cursor() as cursor:
-            # Blocking form on purpose: a replica that loses the race should wait
-            # for the schema it is about to depend on, not start against the old one.
             log("acquiring advisory lock")
             cursor.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK_KEY,))
             log("lock held; running alembic")

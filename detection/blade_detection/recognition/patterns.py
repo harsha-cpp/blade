@@ -33,7 +33,7 @@ def _compiled(pattern: str, case_sensitive: bool) -> re.Pattern[str]:
 
 
 @lru_cache(maxsize=512)
-def _term_pattern(terms: tuple[str, ...]) -> re.Pattern[str] | None:
+def term_pattern(terms: tuple[str, ...]) -> re.Pattern[str] | None:
     if not terms:
         return None
     escaped = sorted((re.escape(term) for term in terms), key=len, reverse=True)
@@ -47,12 +47,12 @@ def _window(text: str, start: int, end: int, radius: int) -> str:
 def _score(rule: Rule, text: str, start: int, end: int) -> tuple[float, bool] | None:
     window = _window(text, start, end, rule.context_window)
 
-    positive = _term_pattern(tuple(rule.context_terms))
+    positive = term_pattern(tuple(rule.context_terms))
     has_context = bool(positive.search(window)) if positive else False
     if rule.requires_context and not has_context:
         return None
 
-    negative = _term_pattern(tuple(rule.negative_terms))
+    negative = term_pattern(tuple(rule.negative_terms))
     has_negative = bool(negative.search(window)) if negative else False
 
     confidence = rule.base_confidence

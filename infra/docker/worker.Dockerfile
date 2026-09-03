@@ -7,7 +7,7 @@
 # backend/pyproject.toml declares `blade-detection = { path = "../detection" }`,
 # so a backend/-only context cannot resolve the dependency.
 #
-# The worker runs the SAME detection code as the API — extractors, OCR, spaCy —
+# The worker runs the SAME detection code as the API - extractors, OCR, spaCy -
 # so it needs the same interpreter, the same wheels and the same system packages.
 # Every stage below up to the final CMD is byte-identical to api.Dockerfile on
 # purpose: buildx layer caching is content-addressed, so building both images
@@ -26,7 +26,7 @@ ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.9.27@sha256:143b40f4ab56a780f43377604702107b
 FROM ${UV_IMAGE} AS uv
 
 # ===========================================================================
-# builder — resolve and install dependencies into /app/.venv
+# builder - resolve and install dependencies into /app/.venv
 # ===========================================================================
 FROM ${PYTHON_IMAGE} AS builder
 
@@ -38,7 +38,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # warns loudly about it on every sync without this.
     UV_LINK_MODE=copy \
     # Use the interpreter this image already ships instead of letting uv pull a
-    # managed CPython — the runtime stage has /usr/local/bin/python3.12, not a
+    # managed CPython - the runtime stage has /usr/local/bin/python3.12, not a
     # uv-managed one, and the venv must point at an interpreter that exists there.
     UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=/usr/local/bin/python3.12 \
@@ -118,7 +118,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # uvicorn/celery are invoked directly from the venv; no `uv run` at runtime.
     VIRTUAL_ENV=/app/.venv
 
-# Runtime shared libraries only — no compilers, no headers.
+# Runtime shared libraries only - no compilers, no headers.
 #   libmagic1     : detection/extractors sniffs MIME types via python-magic,
 #                   which dlopen()s libmagic at import time.
 #   poppler-utils : pdftoppm/pdftotext, the fallback path for PDFs that PyMuPDF
@@ -168,7 +168,7 @@ COPY --chown=root:root infra/docker/run-migrations.py /usr/local/bin/run-migrati
 RUN chmod 0755 /usr/local/bin/entrypoint-api.sh
 
 # ATTACHMENT_TEMP_DIR / QUARANTINE_STORAGE_DIR default to /tmp paths and
-# main.py chmods them to 0700 at startup — they must be owned by the runtime
+# main.py chmods them to 0700 at startup - they must be owned by the runtime
 # user or lifespan raises before the first request.
 RUN mkdir -p /var/lib/blade/attachments /var/lib/blade/quarantine \
     && chown -R blade:blade /var/lib/blade \

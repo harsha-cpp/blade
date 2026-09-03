@@ -15,6 +15,8 @@ from blade_backend.auth.jwt import TokenError, decode_access_token
 from blade_backend.auth.tokens import (
     DEVICE_TOKEN_PREFIX,
     TokenFormatError,
+    hash_token_secret,
+    is_legacy_token_hash,
     parse_token,
     verify_token_secret,
 )
@@ -88,6 +90,12 @@ async def current_member(
 CurrentMember = Annotated[Principal, Depends(current_member)]
 
 
+async def _verify_device_secret(secret: str, token_hash: bytes) -> bool:
+    if is_legacy_token_hash(token_hash):
+        return await asyncio.to_thread(verify_token_secret, secret, token_hash)
+    return verify_token_secret(secret, token_hash)
+
+
 async def current_device(
     session: DbSession,
     x_blade_device_token: Annotated[str | None, Header()] = None,
@@ -102,7 +110,8 @@ async def current_device(
     device = await session.get(DeviceToken, device_id)
     if device is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
-    secret_ok = await asyncio.to_thread(verify_token_secret, secret, device.token_hash)
+    stored_hash = device.token_hash
+    secret_ok = await _verify_device_secret(secret, stored_hash)
     if not secret_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
 
@@ -112,8 +121,15 @@ async def current_device(
     if device.expires_at <= now:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="device token expired")
 
-    if device.last_seen_at is None or now - device.last_seen_at > _DEVICE_LAST_SEEN_INTERVAL:
+    needs_upgrade = is_legacy_token_hash(stored_hash)
+    if needs_upgrade:
+        device.token_hash = hash_token_secret(secret)
+    stale_last_seen = (
+        device.last_seen_at is None or now - device.last_seen_at > _DEVICE_LAST_SEEN_INTERVAL
+    )
+    if stale_last_seen:
         device.last_seen_at = now
+    if needs_upgrade or stale_last_seen:
         await session.commit()
 
     return DevicePrincipal(

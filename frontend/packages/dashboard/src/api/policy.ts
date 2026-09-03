@@ -47,6 +47,7 @@ export interface RuleConditions {
   entity_types_all?: string[];
   min_entity_count?: number | null;
   min_subject_count?: number | null;
+  min_unscanned_attachments?: number | null;
   min_risk_score?: number | null;
   max_risk_score?: number | null;
   min_severity?: Severity | null;

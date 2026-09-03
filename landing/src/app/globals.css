@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-/* Breakpoints match the source site exactly:
-   phone < 810 · tablet 810–1199 · desktop 1200–1439 · large ≥ 1440 */
 @theme {
   --breakpoint-*: initial;
   --breakpoint-tab: 810px;
@@ -45,7 +43,6 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Text rendered by the site's custom code components carries no feature settings. */
   .no-ft {
     font-feature-settings: normal;
   }
@@ -57,7 +54,7 @@
 }
 
 @layer components {
-  /* ---------- type presets (values are the source's computed styles) ---------- */
+
   .eyebrow {
     font-family: var(--font-mono);
     font-weight: 600;
@@ -89,7 +86,6 @@
     }
   }
 
-  /* Section H2 — 40 → 72 */
   .h2-72 {
     font-family: var(--font-rsm);
     font-weight: 500;
@@ -105,7 +101,6 @@
     }
   }
 
-  /* Display — 40 → 72 → 72 → 140 */
   .display-140 {
     font-family: var(--font-rsm);
     font-weight: 500;
@@ -128,7 +123,6 @@
     }
   }
 
-  /* Body — 16 → 24 → 20 → 24 */
   .body-24 {
     font-family: var(--font-rsr);
     font-weight: 400;
@@ -166,7 +160,6 @@
     letter-spacing: -0.4px;
   }
 
-  /* Geist Pixel display — 56 → 100 */
   .pixel-100 {
     font-family: var(--font-pixel);
     font-weight: 400;
@@ -199,7 +192,6 @@
     }
   }
 
-  /* ---------- nav ---------- */
   .navlink {
     font-family: var(--font-rsm);
     font-weight: 500;
@@ -214,7 +206,6 @@
     color: var(--color-blue);
   }
 
-  /* ---------- buttons ---------- */
   .btn {
     position: relative;
     display: flex;
@@ -234,7 +225,6 @@
       color 0.25s ease;
   }
 
-  /* lg: 48px tall below 1440, 66px at and above */
   .btn-lg {
     height: 48px;
     padding: 16px 94px;
@@ -267,7 +257,7 @@
     font-size: 16px;
     line-height: 20px;
   }
-  /* phone nav CTA is a smaller boxed button */
+
   .btn-navsm {
     height: 32px;
     padding: 9px 14px;
@@ -321,7 +311,6 @@
     color: var(--color-blue);
   }
 
-  /* ---------- footer ---------- */
   .footlink {
     transition: color 0.25s ease;
   }

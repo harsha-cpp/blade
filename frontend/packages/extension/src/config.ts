@@ -12,6 +12,8 @@ export const ATTACHMENT_POLL_TIMEOUT_MS = 10_000;
 export const ATTACHMENT_FETCH_TIMEOUT_MS = 8_000;
 export const FINALIZE_TIMEOUT_MS = 10_000;
 
+export const BACKEND_MESSAGE_GRACE_MS = 500;
+
 export const SCAN_BUDGET_MS = 20_000;
 
 export const VERDICT_CACHE_TTL_MS = 60_000;

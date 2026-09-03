@@ -1,4 +1,8 @@
-from blade_backend.policy.defaults import BUILTIN_POLICY_SET, BUILTIN_POLICY_VERSION
+from blade_backend.policy.defaults import (
+    BUILTIN_POLICY_SET,
+    BUILTIN_POLICY_VERSION,
+    UNSCANNED_ATTACHMENT_RULE,
+)
 from blade_backend.policy.engine import (
     APPROVED_RECIPIENT_CLASSES,
     SUBJECT_IDENTIFIERS,
@@ -29,6 +33,7 @@ __all__ = [
     "BUILTIN_POLICY_VERSION",
     "POLICY_SETTINGS_KEY",
     "SUBJECT_IDENTIFIERS",
+    "UNSCANNED_ATTACHMENT_RULE",
     "Action",
     "PolicyDecision",
     "PolicyRule",

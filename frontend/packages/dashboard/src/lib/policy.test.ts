@@ -231,6 +231,9 @@ describe("describeConditions", () => {
   });
 
   it("describes both attachment states", () => {
+    expect(describeConditions({ min_unscanned_attachments: 1 })).toEqual([
+      "at least 1 attachment could not be checked",
+    ]);
     expect(describeConditions({ has_attachments: true })).toEqual([
       "has attachments",
     ]);

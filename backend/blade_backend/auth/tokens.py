@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -18,6 +20,8 @@ EMAIL_VERIFY_PREFIX = "bladeverify"
 _SEPARATOR = "."
 _SECRET_BYTES = 48
 _HASHER = PasswordHasher(type=Type.ID)
+_SHA256_MARKER = b"sha256:"
+_ARGON2_MARKER = b"$argon2"
 
 
 class TokenFormatError(ValueError):
@@ -39,7 +43,7 @@ def issue_token(prefix: str, *, ttl: timedelta, now: datetime | None = None) -> 
     return IssuedToken(
         id=token_id,
         raw_token=f"{prefix}_{token_id}{_SEPARATOR}{secret}",
-        token_hash=_HASHER.hash(secret).encode("utf-8"),
+        token_hash=hash_token_secret(secret),
         expires_at=issued_at + ttl,
     )
 
@@ -58,7 +62,17 @@ def parse_token(prefix: str, raw_token: str) -> tuple[UUID, str]:
         raise TokenFormatError("malformed token") from exc
 
 
+def is_legacy_token_hash(token_hash: bytes) -> bool:
+    return token_hash.startswith(_ARGON2_MARKER)
+
+
 def verify_token_secret(secret: str, token_hash: bytes) -> bool:
+    if is_legacy_token_hash(token_hash):
+        return _verify_legacy_token_secret(secret, token_hash)
+    return hmac.compare_digest(token_hash, hash_token_secret(secret))
+
+
+def _verify_legacy_token_secret(secret: str, token_hash: bytes) -> bool:
     try:
         return _HASHER.verify(token_hash.decode("utf-8"), secret)
     except (UnicodeDecodeError, VerificationError, VerifyMismatchError):
@@ -66,4 +80,5 @@ def verify_token_secret(secret: str, token_hash: bytes) -> bool:
 
 
 def hash_token_secret(secret: str) -> bytes:
-    return _HASHER.hash(secret).encode("utf-8")
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest().encode("ascii")
+    return _SHA256_MARKER + digest

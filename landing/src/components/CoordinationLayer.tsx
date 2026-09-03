@@ -56,7 +56,6 @@ export default function CoordinationLayer() {
           aria-hidden
         />
 
-        {/* left cell */}
         <div className="relative flex max-w-[900px] items-end justify-start overflow-clip p-10">
           <div
             className="pointer-events-none absolute inset-y-0 right-0 w-px bg-stone"
@@ -96,7 +95,6 @@ export default function CoordinationLayer() {
           </div>
         </div>
 
-        {/* right cell */}
         <div className="relative flex items-center justify-start p-10">
           <div className="relative z-[4] flex w-full flex-col items-center overflow-clip">
             <div className="relative z-[1] h-[410px] w-[410px]">
