@@ -45,9 +45,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Build toolchain for any dependency without a manylinux wheel for this arch.
 # Confined to the builder stage; none of it reaches the runtime image.
-RUN --mount=type=cache,id=blade-builder-apt-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=blade-builder-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates
 
@@ -76,8 +74,7 @@ RUN touch /app/backend/README.md /app/detection/README.md
 # The spaCy model en_core_web_sm is a *declared* dependency (a wheel URL in
 # detection/pyproject.toml), so it lands here via uv sync. Do not add a
 # `spacy download` step; it would fetch a second, unpinned copy.
-RUN --mount=type=cache,id=blade-uv-cache,target=/root/.cache/uv,sharing=locked \
-    uv sync --no-dev --no-install-project --no-install-package blade-detection
+RUN uv sync --no-dev --no-install-project --no-install-package blade-detection
 
 # --- Application layer ------------------------------------------------------
 COPY detection/pyproject.toml detection/README.md /app/detection/
@@ -88,8 +85,7 @@ COPY backend/blade_backend /app/backend/blade_backend
 
 # Non-editable so the runtime image carries real packages in site-packages
 # rather than .pth files pointing at a source tree we would then have to ship.
-RUN --mount=type=cache,id=blade-uv-cache,target=/root/.cache/uv,sharing=locked \
-    uv sync --no-dev --no-editable
+RUN uv sync --no-dev --no-editable
 
 # pytesseract is now a plain dependency of the detection package rather
 # than a member of the optional `ocr` extra, so `uv sync` above installs
@@ -129,9 +125,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 #   libpq5        : libpq for psycopg's non-binary import path (alembic).
 #   tini          : PID 1 that reaps zombies and forwards SIGTERM, so
 #                   `docker stop` actually drains uvicorn instead of timing out.
-RUN --mount=type=cache,id=blade-runtime-apt-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=blade-runtime-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         libmagic1 \
         poppler-utils \
         tesseract-ocr \

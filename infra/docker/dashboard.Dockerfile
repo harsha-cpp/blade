@@ -46,8 +46,7 @@ COPY frontend/packages/extension/package.json ./packages/extension/package.json
 # workspace dependencies (@bladedlp/shared) and skips the extension entirely.
 # That avoids installing @playwright/test and pdfjs-dist for an image that will
 # never run them, and skips Playwright's browser download.
-RUN --mount=type=cache,id=blade-dashboard-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
-    pnpm install --frozen-lockfile --filter "@bladedlp/dashboard..."
+RUN pnpm install --frozen-lockfile --filter "@bladedlp/dashboard..."
 
 # --- Source layer -----------------------------------------------------------
 COPY frontend/tsconfig*.json ./
