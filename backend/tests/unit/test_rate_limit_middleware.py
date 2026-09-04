@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import secrets
+
 import pytest
 from starlette.requests import Request
 
+from blade_backend.auth.jwt import issue_access_token
 from blade_backend.observability import security as security_module
 from blade_backend.observability.security import RateLimitMiddleware, resolve_client_ip
 from blade_backend.settings import Settings
@@ -36,7 +39,7 @@ async def _noop(_scope: object, _receive: object, _send: object) -> None:
 
 def _middleware(**overrides: object) -> RateLimitMiddleware:
     middleware = RateLimitMiddleware(_noop, **overrides)  # type: ignore[arg-type]
-    middleware._redis_checked = True
+    middleware._redis.suspend()
     return middleware
 
 
@@ -99,13 +102,67 @@ async def test_memory_buckets_are_bounded(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.unit
-def test_authenticated_and_device_callers_key_separately() -> None:
+def test_a_verified_access_token_gets_its_own_bucket() -> None:
+    middleware = _middleware()
+    token = issue_access_token("11111111-1111-1111-1111-111111111111", "org-1", "owner")
+
+    keyed = middleware._key(_request(headers=[(b"authorization", f"Bearer {token}".encode())]))
+
+    assert keyed == "member:11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [(b"authorization", b"Bearer not-a-real-token")],
+        [(b"x-blade-device-token", b"bladedev_x.y")],
+        [],
+    ],
+)
+def test_unverified_credentials_are_keyed_on_the_client_ip(
+    headers: list[tuple[bytes, bytes]],
+) -> None:
     middleware = _middleware()
 
-    bearer = middleware._key(_request(headers=[(b"authorization", b"Bearer abc")]))
-    device = middleware._key(_request(headers=[(b"x-blade-device-token", b"bladedev_x.y")]))
-    anonymous = middleware._key(_request())
+    assert middleware._key(_request(headers=headers)) == "ip:203.0.113.10"
 
-    assert bearer.startswith("auth:")
-    assert device.startswith("device:")
-    assert anonymous == "ip:203.0.113.10"
+
+@pytest.mark.unit
+async def test_a_flood_of_random_bearer_tokens_is_limited_as_one_client() -> None:
+    middleware = _middleware(limit=3)
+
+    allowed = [
+        not await middleware._over_limit(
+            middleware._key(
+                _request(
+                    headers=[(b"authorization", f"Bearer {secrets.token_urlsafe(24)}".encode())]
+                )
+            )
+        )
+        for _ in range(6)
+    ]
+
+    assert allowed == [True, True, True, False, False, False]
+    assert len(middleware._buckets) == 1
+
+
+@pytest.mark.unit
+async def test_a_flood_of_random_device_tokens_is_limited_as_one_client() -> None:
+    middleware = _middleware(limit=3)
+
+    allowed = [
+        not await middleware._over_limit(
+            middleware._key(
+                _request(
+                    headers=[
+                        (b"x-blade-device-token", f"bladedev_{secrets.token_hex(8)}.x".encode())
+                    ]
+                )
+            )
+        )
+        for _ in range(6)
+    ]
+
+    assert allowed == [True, True, True, False, False, False]
+    assert len(middleware._buckets) == 1

@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  backendFailureStep,
   BackendRequestError,
+  isAttachmentRejected,
+  retryDelayMs,
   sendBackendRequest,
   sendBackendRequestAndForget,
 } from "./backend-client";
+import { BACKEND_RETRY_AFTER_FALLBACK_MS } from "./config";
 import { BACKEND_REQUEST_MESSAGE, type BackendRequest } from "./messages";
 
 function statusRequest(timeoutMs = 5_000): BackendRequest {
@@ -109,5 +113,72 @@ describe("backend requests from the page context", () => {
       throw new Error("Receiving end does not exist");
     });
     expect(() => sendBackendRequestAndForget(statusRequest())).not.toThrow();
+  });
+});
+
+describe("what the user is told when a scan cannot reach the backend", () => {
+  it.each([
+    [401, "This install is not linked - checking locally..."],
+    [403, "This install is not linked - checking locally..."],
+    [429, "The server is busy - checking locally..."],
+    [500, "Server unreachable - checking locally..."],
+  ])("explains a %s in its own words", (status, message) => {
+    expect(backendFailureStep(new BackendRequestError("http", status))).toBe(
+      message,
+    );
+  });
+
+  it("calls anything else unreachable", () => {
+    expect(backendFailureStep(new BackendRequestError("network"))).toBe(
+      "Server unreachable - checking locally...",
+    );
+    expect(backendFailureStep(new Error("boom"))).toBe(
+      "Server unreachable - checking locally...",
+    );
+  });
+});
+
+describe("back pressure and attachments the server will not take", () => {
+  it("waits as long as a 429 asked for", () => {
+    expect(
+      retryDelayMs(new BackendRequestError("http", 429, "slow down", 30_000)),
+    ).toBe(30_000);
+  });
+
+  it("waits a short while when a 429 named no delay", () => {
+    expect(retryDelayMs(new BackendRequestError("http", 429))).toBe(
+      BACKEND_RETRY_AFTER_FALLBACK_MS,
+    );
+  });
+
+  it("does not retry anything that is not a 429", () => {
+    expect(retryDelayMs(new BackendRequestError("http", 500))).toBeNull();
+    expect(retryDelayMs(new BackendRequestError("timeout"))).toBeNull();
+    expect(retryDelayMs(new Error("boom"))).toBeNull();
+  });
+
+  it("treats only a 413 as an attachment the server refused", () => {
+    expect(isAttachmentRejected(new BackendRequestError("http", 413))).toBe(
+      true,
+    );
+    expect(isAttachmentRejected(new BackendRequestError("http", 500))).toBe(
+      false,
+    );
+    expect(isAttachmentRejected(new Error("boom"))).toBe(false);
+  });
+
+  it("carries the delay from the worker into the error", async () => {
+    stubSendMessage(async () => ({
+      ok: false,
+      kind: "http",
+      status: 429,
+      detail: "too many requests",
+      retryAfterMs: 12_000,
+    }));
+
+    await expect(sendBackendRequest(statusRequest())).rejects.toMatchObject({
+      status: 429,
+      retryAfterMs: 12_000,
+    });
   });
 });

@@ -1,3 +1,5 @@
+import { SEND_LABEL_TABLE, type SendLabelSet } from "./send-labels";
+
 export type SendTriggerKind = "send" | "schedule-open" | "schedule-confirm";
 
 export interface SendTrigger {
@@ -5,14 +7,29 @@ export interface SendTrigger {
   element: HTMLElement;
 }
 
+export type SendShortcutOutcome =
+  | { kind: "ignore" }
+  | { kind: "no-send-control" }
+  | { kind: "scan"; trigger: SendTrigger };
+
 const ACTIONABLE_SELECTOR =
   '[role="button"],[role="menuitem"],button,[data-tooltip]';
+const BUTTON_SELECTOR = '[role="button"],button';
 
-const NON_COMMIT =
-  /(discard|cancel|close|dismiss|back|attach|insert|save|delete|remove|undo|help|feedback)/;
-const MORE_OPTIONS = /more send options|more options/;
-const SCHEDULE_DIALOG_NAME = /schedule send/;
 const SCHEDULE_NAVIGATION = /(pick date|previous|next|month|year)/;
+
+const MAX_GROUP_DEPTH = 3;
+const MAX_GROUP_ACTIONS = 4;
+const MIN_STRUCTURAL_SIGNALS = 3;
+
+function collect(pick: (set: SendLabelSet) => readonly string[]): string[] {
+  return [...new Set(SEND_LABEL_TABLE.flatMap(pick).map(normalize))];
+}
+
+const SEND_LABELS = collect((set) => set.send);
+const SCHEDULE_LABELS = collect((set) => set.scheduleSend);
+const NON_COMMIT_LABELS = collect((set) => set.nonCommit);
+const MORE_OPTIONS_LABELS = collect((set) => set.moreOptions);
 
 export function triggerLabel(el: Element): string {
   const aria = el.getAttribute("aria-label");
@@ -25,25 +42,52 @@ export function triggerLabel(el: Element): string {
 
 function normalize(value: string): string {
   return value
-    .replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "")
+    .normalize("NFC")
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function isAscii(value: string): boolean {
+  return !/[^\u0020-\u007e]/.test(value);
+}
+
+function isWordChar(char: string | undefined): boolean {
+  return char !== undefined && /[a-z0-9]/.test(char);
+}
+
+function containsWord(label: string, entry: string): boolean {
+  let index = label.indexOf(entry);
+  while (index !== -1) {
+    const startFree = !isWordChar(entry[0]) || !isWordChar(label[index - 1]);
+    const endFree =
+      !isWordChar(entry[entry.length - 1]) ||
+      !isWordChar(label[index + entry.length]);
+    if (startFree && endFree) return true;
+    index = label.indexOf(entry, index + 1);
+  }
+  return false;
+}
+
+function matchesLabel(label: string, entries: readonly string[]): boolean {
+  return entries.some((entry) =>
+    isAscii(entry) ? containsWord(label, entry) : label.includes(entry),
+  );
 }
 
 export function classifySendElement(el: Element): SendTriggerKind | null {
   const label = triggerLabel(el);
   if (!label) return null;
-  if (NON_COMMIT.test(label)) return null;
-  if (MORE_OPTIONS.test(label)) return null;
+  if (matchesLabel(label, NON_COMMIT_LABELS)) return null;
+  if (matchesLabel(label, MORE_OPTIONS_LABELS)) return null;
 
-  if (label.includes("schedule")) {
-    if (!label.includes("send")) return null;
-    return el.getAttribute("role") === "menuitem"
-      ? "schedule-open"
-      : "schedule-confirm";
+  const menuItem = el.getAttribute("role") === "menuitem";
+  if (matchesLabel(label, SCHEDULE_LABELS)) {
+    return menuItem ? "schedule-open" : "schedule-confirm";
   }
-
-  if (/\bsend\b/.test(label)) return "send";
+  if (matchesLabel(label, SEND_LABELS)) {
+    return menuItem ? "schedule-open" : "send";
+  }
   return null;
 }
 
@@ -52,11 +96,11 @@ export function classifyScheduleDialogAction(
 ): SendTriggerKind | null {
   const dialog = el.closest('[role="dialog"],[role="alertdialog"]');
   if (!dialog) return null;
-  if (!SCHEDULE_DIALOG_NAME.test(dialogName(dialog))) return null;
+  if (!matchesLabel(dialogName(dialog), SCHEDULE_LABELS)) return null;
 
   const label = triggerLabel(el);
   if (!label) return null;
-  if (NON_COMMIT.test(label)) return null;
+  if (matchesLabel(label, NON_COMMIT_LABELS)) return null;
   if (SCHEDULE_NAVIGATION.test(label)) return null;
   return "schedule-confirm";
 }
@@ -87,12 +131,127 @@ export function findSendTrigger(target: Element | null): SendTrigger | null {
   return null;
 }
 
-export function findSendButton(compose: Element): HTMLElement | null {
-  const candidates = compose.querySelectorAll<HTMLElement>(ACTIONABLE_SELECTOR);
-  for (const candidate of candidates) {
-    if (classifySendElement(candidate) === "send") return candidate;
+function opensMenu(el: Element): boolean {
+  if (el.getAttribute("aria-haspopup") === "true") return true;
+  return matchesLabel(triggerLabel(el), MORE_OPTIONS_LABELS);
+}
+
+function isUnavailable(el: Element): boolean {
+  return (
+    el.getAttribute("aria-disabled") === "true" || el.hasAttribute("disabled")
+  );
+}
+
+function precedes(first: Element, second: Element): boolean {
+  return (
+    (first.compareDocumentPosition(second) &
+      Node.DOCUMENT_POSITION_FOLLOWING) !==
+    0
+  );
+}
+
+function actionsIn(root: Element): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(BUTTON_SELECTOR));
+}
+
+function sendGroupOf(el: HTMLElement): Element | null {
+  let group: Element | null = el.parentElement;
+  for (let depth = 0; group && depth < MAX_GROUP_DEPTH; depth += 1) {
+    const actions = actionsIn(group);
+    if (actions.length > MAX_GROUP_ACTIONS) return null;
+    const menuCaret = actions.find(
+      (action) => action !== el && opensMenu(action),
+    );
+    if (menuCaret && actions[0] === el && precedes(el, menuCaret)) return group;
+    group = group.parentElement;
   }
   return null;
+}
+
+function isBelowComposeBody(el: Element, compose: Element): boolean {
+  const body = compose.querySelector('[role="textbox"]');
+  if (!body || body.contains(el)) return false;
+  return precedes(body, el);
+}
+
+function structuralSendSignals(el: HTMLElement, compose: Element): number {
+  if (el.getAttribute("role") === "menuitem") return 0;
+  if (opensMenu(el)) return 0;
+  if (!sendGroupOf(el)) return 0;
+
+  let signals = 1;
+  if (el.hasAttribute("data-tooltip")) signals += 1;
+  if (el.hasAttribute("jslog")) signals += 1;
+  if (isBelowComposeBody(el, compose)) signals += 1;
+  return signals;
+}
+
+function strongestByStructure(
+  list: readonly HTMLElement[],
+  compose: Element,
+): HTMLElement | null {
+  let best: HTMLElement | null = null;
+  let bestSignals = -1;
+  for (const el of list) {
+    const signals = structuralSendSignals(el, compose);
+    if (signals > bestSignals) {
+      best = el;
+      bestSignals = signals;
+    }
+  }
+  return best;
+}
+
+export function findSendControl(compose: Element): HTMLElement | null {
+  const candidates = Array.from(
+    compose.querySelectorAll<HTMLElement>(ACTIONABLE_SELECTOR),
+  ).filter(
+    (el) =>
+      !isUnavailable(el) &&
+      !opensMenu(el) &&
+      !matchesLabel(triggerLabel(el), NON_COMMIT_LABELS),
+  );
+
+  const labelled = candidates.filter(
+    (el) => classifySendElement(el) === "send",
+  );
+  if (labelled.length > 0) return strongestByStructure(labelled, compose);
+
+  let best: HTMLElement | null = null;
+  let bestSignals = 0;
+  let ambiguous = false;
+  for (const candidate of candidates) {
+    const signals = structuralSendSignals(candidate, compose);
+    if (signals < MIN_STRUCTURAL_SIGNALS) continue;
+    if (signals > bestSignals) {
+      best = candidate;
+      bestSignals = signals;
+      ambiguous = false;
+    } else if (signals === bestSignals) {
+      ambiguous = true;
+    }
+  }
+  return ambiguous ? null : best;
+}
+
+export function findSendControlTrigger(
+  compose: Element,
+  target: Element | null,
+): SendTrigger | null {
+  if (!target) return null;
+  const control = findSendControl(compose);
+  if (!control) return null;
+  if (control !== target && !control.contains(target)) return null;
+  return { kind: "send", element: control };
+}
+
+export function resolveSendShortcut(
+  compose: Element | null,
+): SendShortcutOutcome {
+  if (!compose) return { kind: "ignore" };
+  const element = findSendControl(compose);
+  if (!element) return { kind: "no-send-control" };
+  return { kind: "scan", trigger: { kind: "send", element } };
 }
 
 export interface KeyLike {

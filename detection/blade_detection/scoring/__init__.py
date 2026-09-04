@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from blade_detection.config import DetectionConfig
 from blade_detection.models import Entity, Severity
+from blade_detection.normalization import normalise_value
 from blade_detection.scoring.weights import (
     SENSITIVITY_WEIGHTS,
     bucket,
@@ -30,17 +30,16 @@ CLINICAL_TYPES = frozenset({"ICD10", "LAB_ACCESSION", "MEDICAL_LICENSE"})
 COMBINATION_MULTIPLIER = 1.2
 
 
-def _normalize(entity: Entity) -> str:
-    compact = entity.masked_value.strip().upper()
-    if entity.type in {"PERSON", "EMAIL_ADDRESS", "ABHA_ADDRESS", "IN_UPI"}:
-        return " ".join(compact.split())
-    return "".join(character for character in compact if character.isalnum())
+def _group_key(entity: Entity) -> str:
+    if entity.value_hash:
+        return entity.value_hash
+    return normalise_value(entity.type, entity.masked_value)
 
 
 def total_weight(entities: list[Entity]) -> float:
     grouped: dict[tuple[str, str], list[Entity]] = {}
     for entity in entities:
-        grouped.setdefault((entity.type, _normalize(entity)), []).append(entity)
+        grouped.setdefault((entity.type, _group_key(entity)), []).append(entity)
 
     weight = 0.0
     for (entity_type, _value), group in grouped.items():
@@ -53,11 +52,7 @@ def total_weight(entities: list[Entity]) -> float:
     return weight
 
 
-def score(
-    entities: list[Entity],
-    config: DetectionConfig | None = None,
-) -> tuple[float, Severity]:
-    del config
+def score(entities: list[Entity]) -> tuple[float, Severity]:
     if not entities:
         return 0.0, "none"
     risk = risk_from_weight(total_weight(entities))

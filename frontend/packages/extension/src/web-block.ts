@@ -21,5 +21,5 @@ export function webBlockKey(report: WebBlockReport): string {
   const types = [...new Set(report.entities.map((e) => e.type))]
     .sort()
     .join(",");
-  return `${report.site_host}|${report.reason}|${types}`;
+  return `${report.site_host}|${types}`;
 }

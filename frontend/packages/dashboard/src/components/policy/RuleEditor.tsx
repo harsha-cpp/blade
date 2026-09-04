@@ -1,4 +1,6 @@
+import { useId } from "react";
 import type { PolicyRule, RuleConditions } from "../../api/policy";
+import type { DraftRule } from "../../lib/policy";
 import {
   CLASS_LABELS,
   RECIPIENT_CLASSES,
@@ -24,7 +26,7 @@ export default function RuleEditor({
   onChange,
   onRemove,
 }: {
-  rule: PolicyRule;
+  rule: DraftRule;
   onChange: (patch: Partial<PolicyRule>) => void;
   onRemove: () => void;
 }) {
@@ -61,11 +63,11 @@ export default function RuleEditor({
         style={{ flexWrap: "wrap", alignItems: "flex-end" }}
       >
         <div className="field grow" style={{ minWidth: 200 }}>
-          <label className="label" htmlFor={`id-${rule.id}`}>
+          <label className="label" htmlFor={`id-${rule.key}`}>
             Rule id
           </label>
           <input
-            id={`id-${rule.id}`}
+            id={`id-${rule.key}`}
             className="input mono"
             value={rule.id}
             onChange={(e) => onChange({ id: e.target.value })}
@@ -76,11 +78,11 @@ export default function RuleEditor({
           </span>
         </div>
         <div className="field" style={{ minWidth: 160 }}>
-          <label className="label" htmlFor={`action-${rule.id}`}>
+          <label className="label" htmlFor={`action-${rule.key}`}>
             Action
           </label>
           <select
-            id={`action-${rule.id}`}
+            id={`action-${rule.key}`}
             className="select"
             value={rule.action}
             onChange={(e) =>
@@ -96,11 +98,11 @@ export default function RuleEditor({
           <span className="hint">{ACTION_COPY[rule.action]}</span>
         </div>
         <div className="field" style={{ minWidth: 160 }}>
-          <label className="label" htmlFor={`sev-${rule.id}`}>
+          <label className="label" htmlFor={`sev-${rule.key}`}>
             Report severity as at least
           </label>
           <select
-            id={`sev-${rule.id}`}
+            id={`sev-${rule.key}`}
             className="select"
             value={rule.min_reported_severity ?? ""}
             onChange={(e) =>
@@ -122,11 +124,11 @@ export default function RuleEditor({
       </div>
 
       <div className="field">
-        <label className="label" htmlFor={`desc-${rule.id}`}>
+        <label className="label" htmlFor={`desc-${rule.key}`}>
           Why this rule exists
         </label>
         <input
-          id={`desc-${rule.id}`}
+          id={`desc-${rule.key}`}
           className="input"
           value={rule.description}
           onChange={(e) => onChange({ description: e.target.value })}
@@ -136,11 +138,11 @@ export default function RuleEditor({
       </div>
 
       <div className="field">
-        <label className="label" htmlFor={`msg-${rule.id}`}>
+        <label className="label" htmlFor={`msg-${rule.key}`}>
           Message shown to the sender
         </label>
         <textarea
-          id={`msg-${rule.id}`}
+          id={`msg-${rule.key}`}
           className="textarea"
           value={rule.user_message}
           onChange={(e) => onChange({ user_message: e.target.value })}
@@ -192,11 +194,11 @@ export default function RuleEditor({
             max={999}
           />
           <div className="field" style={{ minWidth: 150 }}>
-            <label className="label" htmlFor={`minsev-${rule.id}`}>
+            <label className="label" htmlFor={`minsev-${rule.key}`}>
               Min severity
             </label>
             <select
-              id={`minsev-${rule.id}`}
+              id={`minsev-${rule.key}`}
               className="select"
               value={c.min_severity ?? ""}
               onChange={(e) =>
@@ -215,11 +217,11 @@ export default function RuleEditor({
             </select>
           </div>
           <div className="field" style={{ minWidth: 150 }}>
-            <label className="label" htmlFor={`att-${rule.id}`}>
+            <label className="label" htmlFor={`att-${rule.key}`}>
               Attachments
             </label>
             <select
-              id={`att-${rule.id}`}
+              id={`att-${rule.key}`}
               className="select"
               value={
                 c.has_attachments === undefined || c.has_attachments === null
@@ -296,9 +298,12 @@ function EntityPicker({
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
+  const labelId = useId();
   return (
-    <div className="field">
-      <span className="label">{label}</span>
+    <div className="field" role="group" aria-labelledby={labelId}>
+      <span className="label" id={labelId}>
+        {label}
+      </span>
       {ENTITY_GROUPS.map((group) => (
         <div key={group} style={{ marginTop: 6 }}>
           <span className="subtle">{group}</span>
@@ -340,10 +345,14 @@ function NumberField({
   min: number;
   max: number;
 }) {
+  const id = useId();
   return (
     <div className="field" style={{ minWidth: 130 }}>
-      <label className="label">{label}</label>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
       <input
+        id={id}
         className="input"
         type="number"
         min={min}

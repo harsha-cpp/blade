@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { links as appLinks } from "@/lib/links";
 import Button from "./ui/Button";
+import PrimaryCta from "./ui/PrimaryCta";
 import Lottie from "./ui/Lottie";
 import BladeMark from "./ui/BladeMark";
 
@@ -70,19 +71,12 @@ export default function Footer() {
                   Start protecting an inbox
                 </h5>
                 <p className="body-20 max-w-[310px] whitespace-pre-wrap text-stone">
-                  Create an organization, link the Chrome extension with your
+                  Request access, link the Chrome extension with your
                   organization code, and the next message out is scanned.
                 </p>
               </div>
               <div className="flex w-full max-w-[326px] flex-col items-start justify-center gap-4">
-                <Button
-                  href={appLinks.createAccount}
-                  variant="primary"
-                  size="md"
-                  className="w-full"
-                >
-                  Create an account
-                </Button>
+                <PrimaryCta variant="primary" size="md" className="w-full" />
                 <Button
                   href={appLinks.signIn}
                   variant="outline"

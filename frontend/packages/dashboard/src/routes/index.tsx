@@ -25,6 +25,7 @@ const Devices = lazy(() => import("./devices"));
 const Audit = lazy(() => import("./audit"));
 const Domains = lazy(() => import("./domains"));
 const Members = lazy(() => import("./members"));
+const AccessRequests = lazy(() => import("./access-requests"));
 const Settings = lazy(() => import("./settings"));
 
 function Root() {
@@ -81,7 +82,7 @@ export const routes: RouteObject[] = [
           {
             path: "/policy",
             element: (
-              <RequireCapability capability="editPolicy">
+              <RequireCapability capability="viewPolicy">
                 <Policy />
               </RequireCapability>
             ),
@@ -89,7 +90,7 @@ export const routes: RouteObject[] = [
           {
             path: "/devices",
             element: (
-              <RequireCapability capability="revokeDevice">
+              <RequireCapability capability="viewDevices">
                 <Devices />
               </RequireCapability>
             ),
@@ -100,11 +101,12 @@ export const routes: RouteObject[] = [
           {
             path: "/members",
             element: (
-              <RequireCapability capability="manageMembers">
+              <RequireCapability capability="viewMembers">
                 <Members />
               </RequireCapability>
             ),
           },
+          { path: "/access-requests", element: <AccessRequests /> },
           { path: "/settings", element: <Settings /> },
         ],
       },

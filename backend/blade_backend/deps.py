@@ -22,6 +22,7 @@ from blade_backend.auth.tokens import (
 )
 from blade_backend.db.models import DeviceToken, MemberRole, OrgMember
 from blade_backend.db.session import get_session
+from blade_backend.settings import get_settings
 
 _DEVICE_LAST_SEEN_INTERVAL = timedelta(minutes=5)
 
@@ -96,6 +97,18 @@ async def _verify_device_secret(secret: str, token_hash: bytes) -> bool:
     return verify_token_secret(secret, token_hash)
 
 
+async def _device_owner_is_active(session: AsyncSession, device: DeviceToken) -> bool:
+    if device.member_id is None:
+        return False
+    status_value = await session.scalar(
+        select(OrgMember.status).where(
+            OrgMember.id == device.member_id,
+            OrgMember.org_id == device.org_id,
+        )
+    )
+    return status_value == "active"
+
+
 async def current_device(
     session: DbSession,
     x_blade_device_token: Annotated[str | None, Header()] = None,
@@ -120,6 +133,8 @@ async def current_device(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="device token revoked")
     if device.expires_at <= now:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="device token expired")
+    if not await _device_owner_is_active(session, device):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="device owner is not active")
 
     needs_upgrade = is_legacy_token_hash(stored_hash)
     if needs_upgrade:
@@ -156,3 +171,13 @@ OwnerOnly = Annotated[Principal, Depends(require_role("owner"))]
 OwnerOrAdmin = Annotated[Principal, Depends(require_role("owner", "admin"))]
 DomainEditor = Annotated[Principal, Depends(require_role("owner", "admin", "analyst"))]
 QuarantineReviewer = Annotated[Principal, Depends(require_role("owner", "admin", "analyst"))]
+
+
+async def platform_admin(member: CurrentMember) -> Principal:
+    operators = get_settings().platform_admin_email_set
+    if member.role != "owner" or member.email.strip().lower() not in operators:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not a platform operator")
+    return member
+
+
+PlatformAdmin = Annotated[Principal, Depends(platform_admin)]

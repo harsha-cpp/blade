@@ -1,9 +1,12 @@
-import type { EntityHit } from "@bladedlp/shared";
 import { entityLabel } from "./entity-labels";
-import { detectPhi } from "./phi";
+import { detectPhi, type PhiHit } from "./phi";
 import { FONT_MONO, FONT_UI, palette } from "./theme";
 
 const MAX_INSPECTION_CHARS = 500_000;
+
+export const INSERTION_WINDOW_CHARS = 2_000;
+
+const INSPECTED_EDIT_TTL_MS = 100;
 
 const INSERTION_INPUT_TYPES = new Set([
   "insertText",
@@ -58,17 +61,22 @@ const CONTEXTUAL_ENTITY_TYPES = new Set([
 export interface InputProtectionDecision {
   blocked: boolean;
   reason: "sensitive-data" | "inspection-limit" | null;
-  hits: EntityHit[];
+  hits: PhiHit[];
   labels: string[];
 }
 
+export type InputProtectionNotifier = (
+  decision: InputProtectionDecision,
+  trusted: boolean,
+) => void;
+
 export interface InputProtectionOptions {
   document?: Document;
-  notify?: (decision: InputProtectionDecision) => void;
+  notify?: InputProtectionNotifier;
   onBlocked?: (decision: InputProtectionDecision) => void;
 }
 
-function allowedHits(text: string, hits: EntityHit[]): EntityHit[] {
+function allowedHits(text: string, hits: PhiHit[]): PhiHit[] {
   const hasStandalone = hits.some((hit) =>
     STANDALONE_ENTITY_TYPES.has(hit.type),
   );
@@ -78,7 +86,7 @@ function allowedHits(text: string, hits: EntityHit[]): EntityHit[] {
   );
 }
 
-function decide(hits: EntityHit[]): InputProtectionDecision {
+function decide(hits: PhiHit[]): InputProtectionDecision {
   const labels = [...new Set(hits.map((hit) => entityLabel(hit.type)))];
   return {
     blocked: hits.length > 0,
@@ -134,31 +142,199 @@ function editableFromEvent(event: Event): HTMLElement | null {
   return null;
 }
 
-function editableText(element: HTMLElement): string {
-  if (
+function isPlainTextField(
+  element: HTMLElement,
+): element is HTMLInputElement | HTMLTextAreaElement {
+  return (
     element instanceof HTMLInputElement ||
     element instanceof HTMLTextAreaElement
-  ) {
-    return element.value;
+  );
+}
+
+function editableText(element: HTMLElement): string {
+  if (isPlainTextField(element)) return element.value;
+  return element.textContent ?? "";
+}
+
+export interface TextRange {
+  start: number;
+  end: number;
+}
+
+function textOffset(root: HTMLElement, node: Node, offset: number): number {
+  try {
+    const measure = root.ownerDocument.createRange();
+    measure.selectNodeContents(root);
+    measure.setEnd(node, offset);
+    return measure.toString().length;
+  } catch {
+    return (root.textContent ?? "").length;
   }
-  return element.innerText || element.textContent || "";
+}
+
+export function selectionRange(element: HTMLElement): TextRange {
+  if (isPlainTextField(element)) {
+    const length = element.value.length;
+    const start = element.selectionStart ?? length;
+    const end = element.selectionEnd ?? start;
+    return { start, end };
+  }
+
+  const caret = (element.textContent ?? "").length;
+  const selection = element.ownerDocument.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return { start: caret, end: caret };
+  }
+
+  const range = selection.getRangeAt(0);
+  if (
+    !element.contains(range.startContainer) ||
+    !element.contains(range.endContainer)
+  ) {
+    return { start: caret, end: caret };
+  }
+
+  const start = textOffset(element, range.startContainer, range.startOffset);
+  const end = textOffset(element, range.endContainer, range.endOffset);
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
+export function spliceText(
+  text: string,
+  range: TextRange,
+  insertedText: string,
+): string {
+  return `${text.slice(0, range.start)}${insertedText}${text.slice(range.end)}`;
+}
+
+export function textWindow(
+  text: string,
+  range: TextRange,
+  windowChars: number = INSERTION_WINDOW_CHARS,
+): string {
+  const half = Math.floor(windowChars / 2);
+  return text.slice(
+    Math.max(0, range.start - half),
+    Math.min(text.length, range.end + half),
+  );
+}
+
+export function composedRange(
+  text: string,
+  anchor: TextRange | null,
+  committed: string,
+): TextRange {
+  const fallback = Math.max(0, text.length - committed.length);
+  const start = Math.max(0, Math.min(anchor?.start ?? fallback, text.length));
+  return { start, end: Math.min(text.length, start + committed.length) };
+}
+
+export function spliceWindow(
+  text: string,
+  range: TextRange,
+  insertedText: string,
+  windowChars: number = INSERTION_WINDOW_CHARS,
+): string {
+  const half = Math.floor(windowChars / 2);
+  const from = Math.max(0, range.start - half);
+  const to = Math.min(text.length, range.end + half);
+  return `${text.slice(from, range.start)}${insertedText}${text.slice(range.end, to)}`;
+}
+
+function textNodesIn(element: HTMLElement): Text[] {
+  const walker = element.ownerDocument.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+  );
+  const nodes: Text[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    nodes.push(node as Text);
+    node = walker.nextNode();
+  }
+  return nodes;
+}
+
+function locateOffset(
+  nodes: Text[],
+  target: number,
+): { node: Text; offset: number } | null {
+  let seen = 0;
+  for (const node of nodes) {
+    const length = node.data.length;
+    if (target <= seen + length) return { node, offset: target - seen };
+    seen += length;
+  }
+  const last = nodes[nodes.length - 1];
+  return last ? { node: last, offset: last.data.length } : null;
+}
+
+function deleteEditableRange(element: HTMLElement, range: TextRange): boolean {
+  const nodes = textNodesIn(element);
+  const start = locateOffset(nodes, range.start);
+  const end = locateOffset(nodes, range.end);
+  if (!start || !end) return false;
+
+  const doc = element.ownerDocument;
+  const domRange = doc.createRange();
+  try {
+    domRange.setStart(start.node, start.offset);
+    domRange.setEnd(end.node, end.offset);
+  } catch {
+    return false;
+  }
+
+  const selection = doc.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+    selection.addRange(domRange);
+    const exec = (
+      doc as Document & { execCommand?: (command: string) => boolean }
+    ).execCommand;
+    if (typeof exec === "function") {
+      try {
+        if (exec.call(doc, "delete")) return true;
+      } catch {}
+    }
+  }
+
+  domRange.deleteContents();
+  return true;
+}
+
+function removeTextRange(element: HTMLElement, range: TextRange): void {
+  if (isPlainTextField(element)) {
+    const value = element.value;
+    element.value = `${value.slice(0, range.start)}${value.slice(range.end)}`;
+    try {
+      element.setSelectionRange(range.start, range.start);
+    } catch {}
+    return;
+  }
+  deleteEditableRange(element, range);
 }
 
 function clearEditable(element: HTMLElement): void {
-  if (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement
-  ) {
+  if (isPlainTextField(element)) {
     element.value = "";
     return;
   }
-  element.replaceChildren();
+  deleteEditableRange(element, {
+    start: 0,
+    end: (element.textContent ?? "").length,
+  });
+}
+
+function isCompositionInput(event: Event): boolean {
+  if (!("inputType" in event)) return false;
+  const input = event as InputEvent;
+  return input.isComposing || input.inputType === "insertCompositionText";
 }
 
 function inspectEditables(
   elements: Iterable<HTMLElement>,
 ): InputProtectionDecision {
-  const hits: EntityHit[] = [];
+  const hits: PhiHit[] = [];
   for (const element of elements) {
     if (!isProtectedEditable(element)) continue;
     const decision = inspectProtectedText(editableText(element));
@@ -176,26 +352,32 @@ export function insertionCandidate(
   element: HTMLElement,
   insertedText: string,
 ): string {
-  if (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement
-  ) {
-    const value = element.value;
-    const start = element.selectionStart ?? value.length;
-    const end = element.selectionEnd ?? start;
-    return `${value.slice(0, start)}${insertedText}${value.slice(end)}`;
-  }
-  return `${editableText(element)}${insertedText}`;
+  return spliceText(
+    editableText(element),
+    selectionRange(element),
+    insertedText,
+  );
+}
+
+export function insertionWindow(
+  element: HTMLElement,
+  insertedText: string,
+): string {
+  return spliceWindow(
+    editableText(element),
+    selectionRange(element),
+    insertedText,
+  );
 }
 
 function stopUnsafeInput(
   event: Event,
   decision: InputProtectionDecision,
-  notify: (decision: InputProtectionDecision) => void,
+  notify: InputProtectionNotifier,
 ): void {
   event.preventDefault();
   event.stopImmediatePropagation();
-  notify(decision);
+  notify(decision, event.isTrusted === true);
 }
 
 function createNotice(
@@ -271,13 +453,26 @@ export function installInputProtection(
 ): () => void {
   const documentRef = options.document ?? document;
   const showNotice = options.notify ?? createNotice(documentRef);
-  const notify = (decision: InputProtectionDecision): void => {
-    showNotice(decision);
+  const notify: InputProtectionNotifier = (decision, trusted): void => {
+    showNotice(decision, trusted);
+    if (!trusted) return;
     try {
       options.onBlocked?.(decision);
     } catch {}
   };
   let lastFocusedEditable: HTMLElement | null = null;
+  let inspectedEdit: { element: HTMLElement; at: number } | null = null;
+  const compositionAnchors = new WeakMap<HTMLElement, TextRange>();
+
+  const claimInspectedEdit = (element: HTMLElement): boolean => {
+    const token = inspectedEdit;
+    inspectedEdit = null;
+    return (
+      token !== null &&
+      token.element === element &&
+      Date.now() - token.at <= INSPECTED_EDIT_TTL_MS
+    );
+  };
 
   const onFocusIn = (event: FocusEvent): void => {
     const editable = editableFromEvent(event);
@@ -302,9 +497,13 @@ export function installInputProtection(
     const editable = editableFromEvent(event);
     if (!editable) return;
     const decision = inspectProtectedText(
-      insertionCandidate(editable, event.data),
+      insertionWindow(editable, event.data),
     );
-    if (decision.blocked) stopUnsafeInput(event, decision, notify);
+    if (decision.blocked) {
+      stopUnsafeInput(event, decision, notify);
+      return;
+    }
+    inspectedEdit = { element: editable, at: Date.now() };
   };
 
   const onDrop = (event: DragEvent): void => {
@@ -315,13 +514,40 @@ export function installInputProtection(
     if (decision.blocked) stopUnsafeInput(event, decision, notify);
   };
 
-  const onInput = (event: Event): void => {
+  const onCompositionStart = (event: Event): void => {
     const editable = editableFromEvent(event);
     if (!editable) return;
+    compositionAnchors.set(editable, selectionRange(editable));
+  };
+
+  const onCompositionEnd = (event: Event): void => {
+    const editable = editableFromEvent(event);
+    if (!editable) return;
+    const anchor = compositionAnchors.get(editable) ?? null;
+    compositionAnchors.delete(editable);
+    inspectedEdit = null;
+
+    const committed = (event as CompositionEvent).data ?? "";
+    if (!committed) return;
+
+    const text = editableText(editable);
+    const composed = composedRange(text, anchor, committed);
+    const decision = inspectProtectedText(textWindow(text, composed));
+    if (!decision.blocked) return;
+
+    removeTextRange(editable, composed);
+    notify(decision, event.isTrusted === true);
+  };
+
+  const onInput = (event: Event): void => {
+    if (isCompositionInput(event)) return;
+    const editable = editableFromEvent(event);
+    if (!editable) return;
+    if (claimInspectedEdit(editable)) return;
     const decision = inspectProtectedText(editableText(editable));
     if (!decision.blocked) return;
     clearEditable(editable);
-    notify(decision);
+    notify(decision, event.isTrusted === true);
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -365,6 +591,8 @@ export function installInputProtection(
   };
 
   documentRef.addEventListener("focusin", onFocusIn, true);
+  documentRef.addEventListener("compositionstart", onCompositionStart, true);
+  documentRef.addEventListener("compositionend", onCompositionEnd, true);
   documentRef.addEventListener("paste", onPaste, true);
   documentRef.addEventListener("beforeinput", onBeforeInput, true);
   documentRef.addEventListener("drop", onDrop, true);
@@ -375,6 +603,12 @@ export function installInputProtection(
 
   return () => {
     documentRef.removeEventListener("focusin", onFocusIn, true);
+    documentRef.removeEventListener(
+      "compositionstart",
+      onCompositionStart,
+      true,
+    );
+    documentRef.removeEventListener("compositionend", onCompositionEnd, true);
     documentRef.removeEventListener("paste", onPaste, true);
     documentRef.removeEventListener("beforeinput", onBeforeInput, true);
     documentRef.removeEventListener("drop", onDrop, true);

@@ -1,0 +1,2204 @@
+{
+  "version": "2026.08.1",
+  "serverOnlyRules": [
+    "spacy-ner",
+    "mrn-tenant-*"
+  ],
+  "cases": [
+    {
+      "id": "admin-preauth-001.subject",
+      "text": "Pre-auth request - policy P/181234/12/2026/004567",
+      "entities": [
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 26,
+          "end": 49,
+          "maskedValue": "*******************4567"
+        }
+      ]
+    },
+    {
+      "id": "admin-preauth-001.body",
+      "text": "To the TPA desk,\n\nRaising pre-authorisation for Mrs Lakshmi Devi, UHID 0024518.\nPolicy number: P/181234/12/2026/004567\nPlanned procedure: coronary angiography\nProvisional diagnosis: essential hypertension (I10) with unstable angina\nEstimated cost: INR 85,000\n\nAadhaar and PAN copies attached as required by the insurer.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 52,
+          "end": 64,
+          "maskedValue": "************"
+        },
+        {
+          "type": "MRN",
+          "start": 71,
+          "end": 78,
+          "maskedValue": "*****18"
+        },
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 95,
+          "end": 118,
+          "maskedValue": "*******************4567"
+        },
+        {
+          "type": "ICD10",
+          "start": 206,
+          "end": 209,
+          "maskedValue": "***"
+        }
+      ]
+    },
+    {
+      "id": "admin-claim-001.subject",
+      "text": "Claim rejection - need documents",
+      "entities": []
+    },
+    {
+      "id": "admin-claim-001.body",
+      "text": "The insurer has queried claim CLM-2026-778120 for patient Ramesh Kumar Iyer.\nThey want the discharge summary and the PAN copy. PAN on record is HKPPS5875Q.\nPolicy: GHS/2026/0091823.\nPlease resubmit before Friday or the claim lapses.",
+      "entities": [
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 30,
+          "end": 45,
+          "maskedValue": "***********8120"
+        },
+        {
+          "type": "PERSON",
+          "start": 58,
+          "end": 75,
+          "maskedValue": "*****************"
+        },
+        {
+          "type": "IN_PAN",
+          "start": 144,
+          "end": 154,
+          "maskedValue": "*******75Q"
+        },
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 164,
+          "end": 180,
+          "maskedValue": "************1823"
+        }
+      ]
+    },
+    {
+      "id": "admin-registration-001.subject",
+      "text": "New registration - documents verified",
+      "entities": []
+    },
+    {
+      "id": "admin-registration-001.body",
+      "text": "Registered Sunita Bhatt today, UHID 0031902.\nAadhaar 8534 4210 7545 verified against the physical card.\nMobile 9845567788, email sunita.bhatt91@gmail.com.\nABHA 73-3007-0131-6094 linked at registration.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 36,
+          "end": 43,
+          "maskedValue": "*****02"
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 53,
+          "end": 67,
+          "maskedValue": "**********7545"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 111,
+          "end": 121,
+          "maskedValue": "*******788"
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 129,
+          "end": 153,
+          "maskedValue": "**************@gmail.com"
+        },
+        {
+          "type": "ABHA_NUMBER",
+          "start": 160,
+          "end": 177,
+          "maskedValue": "*************6094"
+        }
+      ]
+    },
+    {
+      "id": "admin-registration-002.subject",
+      "text": "Aadhaar without spaces",
+      "entities": []
+    },
+    {
+      "id": "admin-registration-002.body",
+      "text": "The scanned form has the Aadhaar typed as 2199200018 39 in one place and\n219920001839 in another. Please correct the record to the unspaced form and\nre-verify against the card.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 73,
+          "end": 85,
+          "maskedValue": "********1839"
+        }
+      ]
+    },
+    {
+      "id": "admin-refund-001.subject",
+      "text": "Refund - bank details",
+      "entities": []
+    },
+    {
+      "id": "admin-refund-001.body",
+      "text": "Approved refund of INR 12,400 for UHID 0027741.\nAccount holder: Anand Prakash Joshi\nAccount number: 50100234567891\nIFSC: NBEF0A9M3FI\nPlease process in this week's batch.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 39,
+          "end": 46,
+          "maskedValue": "*****41"
+        },
+        {
+          "type": "PERSON",
+          "start": 64,
+          "end": 91,
+          "maskedValue": "***************************"
+        },
+        {
+          "type": "BANK_ACCOUNT",
+          "start": 100,
+          "end": 114,
+          "maskedValue": "**********7891"
+        },
+        {
+          "type": "IN_IFSC",
+          "start": 121,
+          "end": 132,
+          "maskedValue": "********3FI"
+        }
+      ]
+    },
+    {
+      "id": "admin-refund-002.subject",
+      "text": "UPI refund instead",
+      "entities": []
+    },
+    {
+      "id": "admin-refund-002.body",
+      "text": "Patient has asked for the refund by UPI rather than bank transfer.\nUPI ID given at the counter: meera.sundaram@okhdfcbank\nAmount INR 3,200 against UHID 0019488. Confirm once sent.",
+      "entities": [
+        {
+          "type": "IN_UPI",
+          "start": 96,
+          "end": 121,
+          "maskedValue": "*********************bank"
+        },
+        {
+          "type": "MRN",
+          "start": 152,
+          "end": 159,
+          "maskedValue": "*****88"
+        }
+      ]
+    },
+    {
+      "id": "admin-corporate-001.subject",
+      "text": "Corporate billing - GST details",
+      "entities": []
+    },
+    {
+      "id": "admin-corporate-001.body",
+      "text": "For the corporate health check billing, the employer's GSTIN is 29ILVPC5151I1ZI.\nEmployee UHID list is 0038001 through 0038014. Package rate applies.\nInvoice to be raised against the corporate account, not the individuals.",
+      "entities": [
+        {
+          "type": "IN_GSTIN",
+          "start": 64,
+          "end": 79,
+          "maskedValue": "***********I1ZI"
+        }
+      ]
+    },
+    {
+      "id": "admin-records-request-001.subject",
+      "text": "Medical records request - overseas patient",
+      "entities": []
+    },
+    {
+      "id": "admin-records-request-001.body",
+      "text": "A former patient has requested a copy of his records for a visa medical.\nPassport number M8234567, treated here in 2024 under UHID 0021155.\nIdentity verified in person. Please release the summary and the imaging CD.",
+      "entities": [
+        {
+          "type": "IN_PASSPORT",
+          "start": 89,
+          "end": 97,
+          "maskedValue": "******67"
+        },
+        {
+          "type": "MRN",
+          "start": 131,
+          "end": 138,
+          "maskedValue": "*****55"
+        }
+      ]
+    },
+    {
+      "id": "admin-mlc-001.subject",
+      "text": "MLC records for the court",
+      "entities": []
+    },
+    {
+      "id": "admin-mlc-001.body",
+      "text": "Court has summoned the medico-legal case file for IP No: 2026/04588.\nDriving licence recorded at admission: MH1220110012345.\nRecords department to prepare a certified copy for the hearing on the 14th.",
+      "entities": [
+        {
+          "type": "PATIENT_VISIT_ID",
+          "start": 57,
+          "end": 67,
+          "maskedValue": "*******588"
+        },
+        {
+          "type": "IN_DRIVING_LICENSE",
+          "start": 108,
+          "end": 123,
+          "maskedValue": "***********2345"
+        }
+      ]
+    },
+    {
+      "id": "admin-scheme-001.subject",
+      "text": "Ayushman claim - beneficiary details",
+      "entities": []
+    },
+    {
+      "id": "admin-scheme-001.body",
+      "text": "Beneficiary Harish Chandra Sethi, ABHA 96-9015-1720-1488.\nAadhaar 9552 4877 0811 seeded and verified on the scheme portal.\nPackage code and the discharge summary are uploaded. Awaiting approval.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 12,
+          "end": 32,
+          "maskedValue": "********************"
+        },
+        {
+          "type": "ABHA_NUMBER",
+          "start": 39,
+          "end": 56,
+          "maskedValue": "*************1488"
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 66,
+          "end": 80,
+          "maskedValue": "**********0811"
+        }
+      ]
+    },
+    {
+      "id": "admin-voter-001.subject",
+      "text": "ID proof alternative",
+      "entities": []
+    },
+    {
+      "id": "admin-voter-001.body",
+      "text": "The patient does not have an Aadhaar card with him today. He has produced a\nvoter ID, number ABC1234567, which the registration policy accepts as an\nalternative. Record updated accordingly for UHID 0028830.",
+      "entities": [
+        {
+          "type": "IN_VOTER_ID",
+          "start": 93,
+          "end": 103,
+          "maskedValue": "*******567"
+        },
+        {
+          "type": "MRN",
+          "start": 198,
+          "end": 205,
+          "maskedValue": "*****30"
+        }
+      ]
+    },
+    {
+      "id": "admin-payroll-001.subject",
+      "text": "Form 16 correction - Dr Menon",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 24,
+          "end": 29,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "admin-payroll-001.body",
+      "text": "Dr S Menon's PAN was entered incorrectly in the payroll system.\nCorrect PAN is GTQPJ1081D. Please reissue Form 16 for the last quarter and\nconfirm to finance once done.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 3,
+          "end": 10,
+          "maskedValue": "*******"
+        },
+        {
+          "type": "IN_PAN",
+          "start": 79,
+          "end": 89,
+          "maskedValue": "*******81D"
+        }
+      ]
+    },
+    {
+      "id": "admin-nurse-credential-001.subject",
+      "text": "Nursing council registration check",
+      "entities": []
+    },
+    {
+      "id": "admin-nurse-credential-001.body",
+      "text": "Verifying the nursing council registration for the new ICU hire.\nRegistration number 45123 was quoted on the application form.\nPlease confirm with the council before the joining date.",
+      "entities": [
+        {
+          "type": "MEDICAL_LICENSE",
+          "start": 85,
+          "end": 90,
+          "maskedValue": "****3"
+        }
+      ]
+    },
+    {
+      "id": "admin-appointment-001.subject",
+      "text": "Tomorrow's OPD list",
+      "entities": []
+    },
+    {
+      "id": "admin-appointment-001.body",
+      "text": "Dr Iyer's OPD tomorrow, 22 patients booked.\nFirst four: UHID 0024518, 0031902, 0027741, 0019488.\nTwo are new registrations and will need extra time at the desk.\nClinic starts at 0900 as usual.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 3,
+          "end": 7,
+          "maskedValue": "****"
+        },
+        {
+          "type": "MRN",
+          "start": 61,
+          "end": 68,
+          "maskedValue": "*****18"
+        },
+        {
+          "type": "MRN",
+          "start": 70,
+          "end": 77,
+          "maskedValue": "*****02"
+        },
+        {
+          "type": "MRN",
+          "start": 79,
+          "end": 86,
+          "maskedValue": "*****41"
+        },
+        {
+          "type": "MRN",
+          "start": 88,
+          "end": 95,
+          "maskedValue": "*****88"
+        }
+      ]
+    },
+    {
+      "id": "admin-consent-001.subject",
+      "text": "Consent for research use",
+      "entities": []
+    },
+    {
+      "id": "admin-consent-001.body",
+      "text": "Patient Zoya Ahmed, UHID 0037215, has signed the consent for her anonymised data\nto be used in the diabetes registry. Contact 9701199887 if the ethics committee\nneeds to reach her. Original consent is filed in the records room.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 8,
+          "end": 18,
+          "maskedValue": "**********"
+        },
+        {
+          "type": "MRN",
+          "start": 25,
+          "end": 32,
+          "maskedValue": "*****15"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 126,
+          "end": 136,
+          "maskedValue": "*******887"
+        }
+      ]
+    },
+    {
+      "id": "admin-tpa-followup-001.subject",
+      "text": "TPA followup batch",
+      "entities": []
+    },
+    {
+      "id": "admin-tpa-followup-001.body",
+      "text": "Pending with the TPA:\n  P/181234/12/2026/004567 - query raised, documents sent 03/06\n  GHS/2026/0091823 - rejected, appeal filed\n  MED/2026/114520 - approved, payment awaited\nPlease chase all three at the Monday call.",
+      "entities": [
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 24,
+          "end": 47,
+          "maskedValue": "*******************4567"
+        },
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 87,
+          "end": 103,
+          "maskedValue": "************1823"
+        },
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 131,
+          "end": 146,
+          "maskedValue": "***********4520"
+        }
+      ]
+    },
+    {
+      "id": "admin-death-cert-001.subject",
+      "text": "Death certificate issuance",
+      "entities": []
+    },
+    {
+      "id": "admin-death-cert-001.body",
+      "text": "Death certificate to be issued for the patient under UHID 0028830.\nAadhaar of the deceased: 9364 0224 4047.\nInformant is the son; his mobile is 9812234455. Cause of death as certified by\nthe treating consultant. Please prepare the municipal form.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 58,
+          "end": 65,
+          "maskedValue": "*****30"
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 92,
+          "end": 106,
+          "maskedValue": "**********4047"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 144,
+          "end": 154,
+          "maskedValue": "*******455"
+        }
+      ]
+    },
+    {
+      "id": "admin-bulk-export-001.subject",
+      "text": "Diabetes registry extract",
+      "entities": []
+    },
+    {
+      "id": "admin-bulk-export-001.body",
+      "text": "Attaching the quarterly extract for the diabetes registry: 412 rows with UHID,\nname, age, HbA1c and last visit date. Sample rows below for the format check.\n  0024518, Lakshmi Devi, 61, 7.8, 04/06/2026\n  0031902, Sunita Bhatt, 55, 8.1, 02/06/2026\n  0027741, Anand Prakash Joshi, 48, 9.0, 30/05/2026\nConfirm the format before I send the full file.",
+      "entities": []
+    },
+    {
+      "id": "adv-room-code-001.subject",
+      "text": "Clinical meeting moved to room A12",
+      "entities": []
+    },
+    {
+      "id": "adv-room-code-001.body",
+      "text": "The clinical governance meeting has moved to room A12 on the second floor.\nPlease update your calendars. The patient safety agenda is unchanged.",
+      "entities": []
+    },
+    {
+      "id": "adv-vitamin-001.subject",
+      "text": "Vitamin B12 stock",
+      "entities": []
+    },
+    {
+      "id": "adv-vitamin-001.body",
+      "text": "The pharmacy is low on vitamin B12 injections. Reorder raised with the supplier.\nOral supplements remain available for the outpatient clinic.",
+      "entities": []
+    },
+    {
+      "id": "adv-ward-code-001.subject",
+      "text": "Ward C21 deep clean",
+      "entities": []
+    },
+    {
+      "id": "adv-ward-code-001.body",
+      "text": "Ward C21 is closed for a deep clean on Saturday. Ward B14 will absorb the\noverflow. Housekeeping has been briefed and the schedule is on the noticeboard.",
+      "entities": []
+    },
+    {
+      "id": "adv-invoice-14-digit-001.subject",
+      "text": "Vendor invoice 12345678901234",
+      "entities": []
+    },
+    {
+      "id": "adv-invoice-14-digit-001.body",
+      "text": "Please process vendor invoice 12345678901234 for the linen contract.\nThe purchase order reference is on the second page of the attachment.",
+      "entities": []
+    },
+    {
+      "id": "adv-transaction-ref-001.subject",
+      "text": "Payment confirmation",
+      "entities": []
+    },
+    {
+      "id": "adv-transaction-ref-001.body",
+      "text": "The transfer to the equipment supplier has gone through.\nTransaction reference 45678912345678, value date today. Bank confirmation is\nattached for the accounts file.",
+      "entities": []
+    },
+    {
+      "id": "adv-order-id-001.subject",
+      "text": "Stationery order HSP-2026-0012",
+      "entities": []
+    },
+    {
+      "id": "adv-order-id-001.body",
+      "text": "Order HSP-2026-0012 for stationery has been delivered to the store.\nPlease acknowledge receipt so accounts can release the payment.",
+      "entities": []
+    },
+    {
+      "id": "adv-asset-tag-001.subject",
+      "text": "Asset tag SMH-2026-004999 retired",
+      "entities": []
+    },
+    {
+      "id": "adv-asset-tag-001.body",
+      "text": "The old ultrasound machine, asset tag SMH-2026-004999, has been decommissioned\nand removed from the register. Disposal certificate is with biomedical.",
+      "entities": []
+    },
+    {
+      "id": "adv-invalid-aadhaar-001.subject",
+      "text": "Test data in the staging system",
+      "entities": []
+    },
+    {
+      "id": "adv-invalid-aadhaar-001.body",
+      "text": "The staging database has placeholder values like 2345 6789 0123 in the Aadhaar\ncolumn. They fail checksum validation and should be cleared before the demo.",
+      "entities": []
+    },
+    {
+      "id": "adv-repeated-digits-001.subject",
+      "text": "Form defaults",
+      "entities": []
+    },
+    {
+      "id": "adv-repeated-digits-001.body",
+      "text": "Several forms were submitted with 1111 1111 1111 typed into the Aadhaar field\nas a placeholder. The data entry team has been told to leave it blank instead.",
+      "entities": []
+    },
+    {
+      "id": "adv-pincode-001.subject",
+      "text": "Courier address correction",
+      "entities": []
+    },
+    {
+      "id": "adv-pincode-001.body",
+      "text": "The courier has the wrong PIN code for the branch. It should be 560103, not\n560013. Please update the address on the dispatch labels.",
+      "entities": []
+    },
+    {
+      "id": "adv-amounts-001.subject",
+      "text": "Budget figures for the quarter",
+      "entities": []
+    },
+    {
+      "id": "adv-amounts-001.body",
+      "text": "Capital budget 9845000000 rupees against a revised estimate of 8420000000.\nThe variance note is with finance. Board review is on the 30th.",
+      "entities": []
+    },
+    {
+      "id": "adv-version-numbers-001.subject",
+      "text": "HIS release notes v2.14",
+      "entities": []
+    },
+    {
+      "id": "adv-version-numbers-001.body",
+      "text": "Release v2.14 goes out this weekend. It includes fixes to the billing module\nand the report scheduler. Known issue K21 in the tracker is deferred to v2.15.",
+      "entities": []
+    },
+    {
+      "id": "adv-equipment-model-001.subject",
+      "text": "Monitor model E11 quotation",
+      "entities": []
+    },
+    {
+      "id": "adv-equipment-model-001.body",
+      "text": "The vendor has quoted for the E11 series patient monitors, twelve units.\nComparison with the J18 series from the other supplier is attached.",
+      "entities": []
+    },
+    {
+      "id": "adv-date-range-001.subject",
+      "text": "Audit window",
+      "entities": []
+    },
+    {
+      "id": "adv-date-range-001.body",
+      "text": "The internal audit covers 01/04/2025 to 31/03/2026. Departments should keep\ntheir registers available for that period. Sampling starts next month.",
+      "entities": []
+    },
+    {
+      "id": "adv-staff-email-001.subject",
+      "text": "Contact for the new intranet",
+      "entities": []
+    },
+    {
+      "id": "adv-staff-email-001.body",
+      "text": "Queries about the new intranet should go to helpdesk@sunrisehospital.in rather\nthan to individual IT staff. The old alias stops working at the end of the month.",
+      "entities": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 44,
+          "end": 71,
+          "maskedValue": "********@sunrisehospital.in"
+        }
+      ]
+    },
+    {
+      "id": "adv-mixed-clean-001.subject",
+      "text": "Ward B12 stock of vitamin B12 in room A12",
+      "entities": []
+    },
+    {
+      "id": "adv-mixed-clean-001.body",
+      "text": "Deliberately awkward: ward B12 needs vitamin B12 stock delivered to room A12.\nHousekeeping will move the trolley after the morning round.",
+      "entities": []
+    },
+    {
+      "id": "adv-near-pan-001.subject",
+      "text": "Serial numbers for warranty",
+      "entities": []
+    },
+    {
+      "id": "adv-near-pan-001.body",
+      "text": "Warranty claim needs the serial numbers: SN-4471982-KL and SN-4471983-KL.\nBoth units are from the same batch and failed within the warranty period.",
+      "entities": []
+    },
+    {
+      "id": "adv-twelve-digit-ref-001.subject",
+      "text": "GST filing reference",
+      "entities": []
+    },
+    {
+      "id": "adv-twelve-digit-ref-001.body",
+      "text": "The GST return acknowledgement reference is 174829105538 for last month.\nKeep it with the filing records for the annual reconciliation.",
+      "entities": []
+    },
+    {
+      "id": "adv-clinical-words-no-patient-001.subject",
+      "text": "Diagnosis coding training",
+      "entities": []
+    },
+    {
+      "id": "adv-clinical-words-no-patient-001.body",
+      "text": "Refresher training on diagnosis coding for the clinical coders.\nWe will cover the difference between principal and secondary diagnoses, and\ncommon errors in coding diabetes and hypertension. No live records will be used.",
+      "entities": []
+    },
+    {
+      "id": "adv-abha-word-only-001.subject",
+      "text": "ABHA integration status",
+      "entities": []
+    },
+    {
+      "id": "adv-abha-word-only-001.body",
+      "text": "The ABHA integration is now live in registration. Health ID creation takes about\nninety seconds per patient. Training material is on the intranet.",
+      "entities": []
+    },
+    {
+      "id": "clinical-discharge-001.subject",
+      "text": "Discharge summary - Mrs Lakshmi Devi - UHID 0024518",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 24,
+          "end": 36,
+          "maskedValue": "************"
+        },
+        {
+          "type": "MRN",
+          "start": 44,
+          "end": 51,
+          "maskedValue": "*****18"
+        }
+      ]
+    },
+    {
+      "id": "clinical-discharge-001.body",
+      "text": "Dear Dr Rao,\n\nPlease find the discharge summary for Mrs Lakshmi Devi, admitted 12/03/2026 and\ndischarged today. UHID 0024518.\n\nDiagnosis: Type 2 diabetes mellitus with hyperglycaemia (E11.65) with essential\nhypertension (I10). HbA1c 9.2 on admission, 7.8 at discharge.\n\nAadhaar on file: 7534 7930 7460\nAttendant contact: 9845012345\n\nRegards,\nDr S Menon",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 8,
+          "end": 11,
+          "maskedValue": "***"
+        },
+        {
+          "type": "PERSON",
+          "start": 56,
+          "end": 68,
+          "maskedValue": "************"
+        },
+        {
+          "type": "MRN",
+          "start": 117,
+          "end": 124,
+          "maskedValue": "*****18"
+        },
+        {
+          "type": "ICD10",
+          "start": 184,
+          "end": 190,
+          "maskedValue": "******"
+        },
+        {
+          "type": "ICD10",
+          "start": 221,
+          "end": 224,
+          "maskedValue": "***"
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 287,
+          "end": 301,
+          "maskedValue": "**********7460"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 321,
+          "end": 331,
+          "maskedValue": "*******345"
+        },
+        {
+          "type": "PERSON",
+          "start": 345,
+          "end": 352,
+          "maskedValue": "*******"
+        }
+      ]
+    },
+    {
+      "id": "clinical-discharge-002.subject",
+      "text": "Discharge - bed 412",
+      "entities": []
+    },
+    {
+      "id": "clinical-discharge-002.body",
+      "text": "Summary attached for Ramesh Kumar Iyer, DOB 14/08/1971, MRN: 445123.\nAdmitted with community acquired pneumonia (J18.9), treated with IV antibiotics\nfor six days. Chest X-ray at discharge shows resolving consolidation.\nFollow up in OPD after 10 days.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 21,
+          "end": 38,
+          "maskedValue": "*****************"
+        },
+        {
+          "type": "DATE_OF_BIRTH",
+          "start": 44,
+          "end": 54,
+          "maskedValue": "**********"
+        },
+        {
+          "type": "MRN",
+          "start": 61,
+          "end": 67,
+          "maskedValue": "****23"
+        },
+        {
+          "type": "ICD10",
+          "start": 113,
+          "end": 118,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "clinical-lab-001.subject",
+      "text": "Biochemistry results - urgent review",
+      "entities": []
+    },
+    {
+      "id": "clinical-lab-001.body",
+      "text": "Dr Nair,\n\nResults for patient Sunita Bhatt (UHID 0031902):\n  Creatinine 2.4 mg/dL (was 1.6 last month)\n  eGFR 28\n  Potassium 5.9\n  Haemoglobin 8.2\n\nConsistent with chronic kidney disease stage 3 (N18.3). Nephrology referral raised.\nPlease review today.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 3,
+          "end": 7,
+          "maskedValue": "****"
+        },
+        {
+          "type": "PERSON",
+          "start": 30,
+          "end": 42,
+          "maskedValue": "************"
+        },
+        {
+          "type": "MRN",
+          "start": 49,
+          "end": 56,
+          "maskedValue": "*****02"
+        },
+        {
+          "type": "ICD10",
+          "start": 196,
+          "end": 201,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "clinical-narrative-001.subject",
+      "text": "Bed 7 overnight",
+      "entities": []
+    },
+    {
+      "id": "clinical-narrative-001.body",
+      "text": "Overnight the patient in bed 7 became oliguric, creatinine climbed to 3.1 and\npotassium to 6.2 with peaked T waves on the monitor. Started on calcium gluconate\nand insulin-dextrose, dialysis line inserted at 0400. Family counselled about\nthe poor prognosis. Please review on the morning round.",
+      "entities": []
+    },
+    {
+      "id": "clinical-radiology-001.subject",
+      "text": "CT report - Anand Prakash Joshi",
+      "entities": []
+    },
+    {
+      "id": "clinical-radiology-001.body",
+      "text": "CT abdomen for Anand Prakash Joshi, UHID 0027741, dated 04/06/2026.\n\nFindings: 3.2 cm hypodense lesion in segment VI of the liver with peripheral\nenhancement. Differential includes metastatic deposit. Correlate clinically.\n\nReported by Dr K Subramanian, Reg No. 45123.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 15,
+          "end": 34,
+          "maskedValue": "*******************"
+        },
+        {
+          "type": "MRN",
+          "start": 41,
+          "end": 48,
+          "maskedValue": "*****41"
+        },
+        {
+          "type": "PERSON",
+          "start": 239,
+          "end": 252,
+          "maskedValue": "*************"
+        },
+        {
+          "type": "MEDICAL_LICENSE",
+          "start": 262,
+          "end": 267,
+          "maskedValue": "****3"
+        }
+      ]
+    },
+    {
+      "id": "clinical-prescription-001.subject",
+      "text": "Rx for review",
+      "entities": []
+    },
+    {
+      "id": "clinical-prescription-001.body",
+      "text": "Patient: Meera Sundaram, 62F, UHID 0019488\nDiagnosis: unspecified asthma (J45.909)\n\nRx:\n  Budesonide/Formoterol 160/4.5 - 1 puff BD\n  Montelukast 10mg - 1 OD at night\n  Salbutamol MDI - PRN\n\nReview in 4 weeks with spirometry.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 9,
+          "end": 23,
+          "maskedValue": "**************"
+        },
+        {
+          "type": "MRN",
+          "start": 35,
+          "end": 42,
+          "maskedValue": "*****88"
+        },
+        {
+          "type": "ICD10",
+          "start": 74,
+          "end": 81,
+          "maskedValue": "*******"
+        }
+      ]
+    },
+    {
+      "id": "clinical-referral-001.subject",
+      "text": "Cardiology referral",
+      "entities": []
+    },
+    {
+      "id": "clinical-referral-001.body",
+      "text": "Dear cardiology team,\n\nReferring Mr Vikram Deshpande, ABHA 14-7236-8829-2226, for evaluation of chest\npain (R07.9). ECG shows T inversions in the lateral leads. Troponin negative x2.\nKnown hyperlipidaemia (E78.5).\n\nHe can be reached on +91 98450 12345.\n\nDr A Fernandes",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 36,
+          "end": 52,
+          "maskedValue": "****************"
+        },
+        {
+          "type": "ABHA_NUMBER",
+          "start": 59,
+          "end": 76,
+          "maskedValue": "*************2226"
+        },
+        {
+          "type": "ICD10",
+          "start": 108,
+          "end": 113,
+          "maskedValue": "*****"
+        },
+        {
+          "type": "ICD10",
+          "start": 206,
+          "end": 211,
+          "maskedValue": "*****"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 236,
+          "end": 251,
+          "maskedValue": "***********2345"
+        },
+        {
+          "type": "PERSON",
+          "start": 257,
+          "end": 268,
+          "maskedValue": "***********"
+        }
+      ]
+    },
+    {
+      "id": "clinical-referral-002.subject",
+      "text": "Ortho opinion please - IP No: 2026/04512",
+      "entities": [
+        {
+          "type": "PATIENT_VISIT_ID",
+          "start": 30,
+          "end": 40,
+          "maskedValue": "*******512"
+        }
+      ]
+    },
+    {
+      "id": "clinical-referral-002.body",
+      "text": "Admitted last night after a fall. IP No: 2026/04512.\nClosed fracture of the neck of the right femur (S72.001A) on plain film.\nPre-op workup underway, awaiting anaesthesia clearance.\nPatient is 78 and lives alone; social work has been informed.",
+      "entities": [
+        {
+          "type": "PATIENT_VISIT_ID",
+          "start": 41,
+          "end": 51,
+          "maskedValue": "*******512"
+        },
+        {
+          "type": "ICD10",
+          "start": 101,
+          "end": 109,
+          "maskedValue": "********"
+        }
+      ]
+    },
+    {
+      "id": "clinical-op-note-001.subject",
+      "text": "OT note - LSCS",
+      "entities": []
+    },
+    {
+      "id": "clinical-op-note-001.body",
+      "text": "Patient Priya Raghavan, UHID 0033215, underwent emergency LSCS at 0230 for foetal\ndistress. Full-term delivery (O80). Live male infant, 2.8 kg, Apgar 8/9.\nEstimated blood loss 600 mL. Mother and baby stable, shifted to postnatal ward.\nBaby's ABHA to be generated before discharge.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 8,
+          "end": 22,
+          "maskedValue": "**************"
+        },
+        {
+          "type": "MRN",
+          "start": 29,
+          "end": 36,
+          "maskedValue": "*****15"
+        },
+        {
+          "type": "ICD10",
+          "start": 112,
+          "end": 115,
+          "maskedValue": "***"
+        }
+      ]
+    },
+    {
+      "id": "clinical-icu-001.subject",
+      "text": "ICU handover - 6 patients",
+      "entities": []
+    },
+    {
+      "id": "clinical-icu-001.body",
+      "text": "Bed 1 - UHID 0024518 - septic shock, on noradrenaline 0.3 mcg/kg/min, lactate 4.1\nBed 3 - UHID 0031902 - post-op day 2, stable, for step-down today\nBed 5 - UHID 0027741 - acute kidney injury (N17.9), third dialysis session today\nBed 8 - awaiting transfer from casualty\n\nNight team please review all vasopressor weans at 0600.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 13,
+          "end": 20,
+          "maskedValue": "*****18"
+        },
+        {
+          "type": "MRN",
+          "start": 95,
+          "end": 102,
+          "maskedValue": "*****02"
+        },
+        {
+          "type": "MRN",
+          "start": 161,
+          "end": 168,
+          "maskedValue": "*****41"
+        },
+        {
+          "type": "ICD10",
+          "start": 192,
+          "end": 197,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "clinical-pathology-001.subject",
+      "text": "Histopath - accession HP-2026-11842",
+      "entities": [
+        {
+          "type": "LAB_ACCESSION",
+          "start": 22,
+          "end": 35,
+          "maskedValue": "*********1842"
+        }
+      ]
+    },
+    {
+      "id": "clinical-pathology-001.body",
+      "text": "Specimen: right breast lumpectomy\nAccession: HP-2026-11842\nPatient: Fatima Sheikh, UHID 0035120\n\nMicroscopy: invasive ductal carcinoma, grade 2, margins clear at 4 mm.\nER positive, PR positive, HER2 negative. Coded C50.911.\n\nDiscussed at the tumour board on Friday.",
+      "entities": [
+        {
+          "type": "LAB_ACCESSION",
+          "start": 45,
+          "end": 58,
+          "maskedValue": "*********1842"
+        },
+        {
+          "type": "PERSON",
+          "start": 68,
+          "end": 81,
+          "maskedValue": "*************"
+        },
+        {
+          "type": "MRN",
+          "start": 88,
+          "end": 95,
+          "maskedValue": "*****20"
+        },
+        {
+          "type": "ICD10",
+          "start": 215,
+          "end": 222,
+          "maskedValue": "*******"
+        }
+      ]
+    },
+    {
+      "id": "clinical-followup-001.subject",
+      "text": "Follow up reminder",
+      "entities": []
+    },
+    {
+      "id": "clinical-followup-001.body",
+      "text": "Patient Arjun Nambiar, ABHA 82-4451-9858-7260, is due for his three-month diabetic\nreview. Last HbA1c 8.4. Please call him on 9880045512 and book a slot with Dr Iyer.\nHis registered email is arjun.nambiar@gmail.com.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 8,
+          "end": 21,
+          "maskedValue": "*************"
+        },
+        {
+          "type": "ABHA_NUMBER",
+          "start": 28,
+          "end": 45,
+          "maskedValue": "*************7260"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 126,
+          "end": 136,
+          "maskedValue": "*******512"
+        },
+        {
+          "type": "PERSON",
+          "start": 161,
+          "end": 165,
+          "maskedValue": "****"
+        },
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 191,
+          "end": 214,
+          "maskedValue": "*************@gmail.com"
+        }
+      ]
+    },
+    {
+      "id": "clinical-vaccination-001.subject",
+      "text": "Immunisation record request",
+      "entities": []
+    },
+    {
+      "id": "clinical-vaccination-001.body",
+      "text": "Parent has requested the immunisation record for baby Aarav Menon, UHID 0036004,\nDOB 02/01/2026. Record shows BCG, OPV-0 and Hep-B at birth, then the six-week\nschedule completed on time. Please issue the card.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 54,
+          "end": 65,
+          "maskedValue": "***********"
+        },
+        {
+          "type": "MRN",
+          "start": 72,
+          "end": 79,
+          "maskedValue": "*****04"
+        },
+        {
+          "type": "DATE_OF_BIRTH",
+          "start": 85,
+          "end": 95,
+          "maskedValue": "**********"
+        }
+      ]
+    },
+    {
+      "id": "clinical-mental-health-001.subject",
+      "text": "Psychiatry liaison",
+      "entities": []
+    },
+    {
+      "id": "clinical-mental-health-001.body",
+      "text": "Requesting psychiatry review for the patient in bed 14 with generalised anxiety\ndisorder (F41.9) and poor sleep since admission. No suicidal ideation elicited.\nCurrently on sertraline 50mg OD. Family aware and supportive.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 90,
+          "end": 95,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "clinical-transfer-001.subject",
+      "text": "Inter-hospital transfer - accepting?",
+      "entities": []
+    },
+    {
+      "id": "clinical-transfer-001.body",
+      "text": "We have a 54-year-old male, UHID 0028830, with decompensated heart failure (I50.9)\nand known ischaemic heart disease (I25.10), needing a cardiology bed with\nventilator backup. Ejection fraction 22 percent on the last echo.\nCan you accept? Aadhaar 7919 8193 9197 for the transfer paperwork.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 33,
+          "end": 40,
+          "maskedValue": "*****30"
+        },
+        {
+          "type": "ICD10",
+          "start": 76,
+          "end": 81,
+          "maskedValue": "*****"
+        },
+        {
+          "type": "ICD10",
+          "start": 118,
+          "end": 124,
+          "maskedValue": "******"
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 247,
+          "end": 261,
+          "maskedValue": "**********9197"
+        }
+      ]
+    },
+    {
+      "id": "clinical-paeds-001.subject",
+      "text": "Paeds ward query",
+      "entities": []
+    },
+    {
+      "id": "clinical-paeds-001.body",
+      "text": "The 3-year-old admitted with acute gastroenteritis (A09) is tolerating oral\nrehydration well now, two wet nappies overnight, no further vomiting.\nWeight back to 12.4 kg from 11.8 on admission. Likely discharge tomorrow.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 52,
+          "end": 55,
+          "maskedValue": "***"
+        }
+      ]
+    },
+    {
+      "id": "clinical-derm-001.subject",
+      "text": "Photo consent - dermatology",
+      "entities": []
+    },
+    {
+      "id": "clinical-derm-001.body",
+      "text": "Patient Zoya Ahmed, UHID 0037215, has consented to clinical photography of the\natopic dermatitis (L20.9) lesions on both forearms for the teaching archive.\nConsent form is scanned and on file.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 8,
+          "end": 18,
+          "maskedValue": "**********"
+        },
+        {
+          "type": "MRN",
+          "start": 25,
+          "end": 32,
+          "maskedValue": "*****15"
+        },
+        {
+          "type": "ICD10",
+          "start": 98,
+          "end": 103,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "clinical-allergy-001.subject",
+      "text": "Allergy alert added",
+      "entities": []
+    },
+    {
+      "id": "clinical-allergy-001.body",
+      "text": "Anaphylactic reaction to ceftriaxone (T78.40XA) documented for UHID 0024518.\nAlert flag added to the chart and the wristband updated. Please brief the\nincoming team at handover.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 38,
+          "end": 46,
+          "maskedValue": "********"
+        },
+        {
+          "type": "MRN",
+          "start": 68,
+          "end": 75,
+          "maskedValue": "*****18"
+        }
+      ]
+    },
+    {
+      "id": "clinical-ophthal-001.subject",
+      "text": "Eye camp follow-ups",
+      "entities": []
+    },
+    {
+      "id": "clinical-ophthal-001.body",
+      "text": "Three patients from Saturday's camp need follow up for unspecified keratitis\n(H10.9). UHIDs 0038001, 0038007 and 0038014. All were given drops and asked to\nreturn in a week. Please confirm the appointments were made.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 78,
+          "end": 83,
+          "maskedValue": "*****"
+        },
+        {
+          "type": "MRN",
+          "start": 92,
+          "end": 99,
+          "maskedValue": "*****01"
+        },
+        {
+          "type": "MRN",
+          "start": 101,
+          "end": 108,
+          "maskedValue": "*****07"
+        },
+        {
+          "type": "MRN",
+          "start": 113,
+          "end": 120,
+          "maskedValue": "*****14"
+        }
+      ]
+    },
+    {
+      "id": "clinical-obg-001.subject",
+      "text": "ANC list for Thursday",
+      "entities": []
+    },
+    {
+      "id": "clinical-obg-001.body",
+      "text": "Antenatal clinic Thursday, 14 booked. Two are high risk:\n  - UHID 0039112, gestational diabetes, needs a growth scan\n  - UHID 0039140, previous LSCS, for consultant review\nRest are routine. Scan slots are confirmed with radiology.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 66,
+          "end": 73,
+          "maskedValue": "*****12"
+        },
+        {
+          "type": "MRN",
+          "start": 126,
+          "end": 133,
+          "maskedValue": "*****40"
+        }
+      ]
+    },
+    {
+      "id": "clinical-emergency-001.subject",
+      "text": "RTA - police intimation done",
+      "entities": []
+    },
+    {
+      "id": "clinical-emergency-001.body",
+      "text": "Road traffic accident brought in at 2140, IP No: 2026/04588.\nUnidentified male, approximately 30 years, head injury with GCS 9 on arrival.\nIntubated in casualty, CT head shows a small extradural. Neurosurgery informed.\nPolice intimation completed. No relatives traced yet.",
+      "entities": [
+        {
+          "type": "PATIENT_VISIT_ID",
+          "start": 49,
+          "end": 59,
+          "maskedValue": "*******588"
+        }
+      ]
+    },
+    {
+      "id": "clinical-oncology-001.subject",
+      "text": "Chemo cycle 3 - dose adjustment",
+      "entities": []
+    },
+    {
+      "id": "clinical-oncology-001.body",
+      "text": "Patient Harish Chandra Sethi, UHID 0034411, ABHA 21-3528-1949-7011.\nNeutrophils 0.9 before cycle 3, so today's dose is deferred by a week and GCSF\nstarted. Counselled about neutropenic sepsis warning signs. Contact number on\nfile is 9701122334.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 8,
+          "end": 28,
+          "maskedValue": "********************"
+        },
+        {
+          "type": "MRN",
+          "start": 35,
+          "end": 42,
+          "maskedValue": "*****11"
+        },
+        {
+          "type": "ABHA_NUMBER",
+          "start": 49,
+          "end": 66,
+          "maskedValue": "*************7011"
+        },
+        {
+          "type": "IN_PHONE",
+          "start": 233,
+          "end": 243,
+          "maskedValue": "*******334"
+        }
+      ]
+    },
+    {
+      "id": "clinical-abha-address-001.subject",
+      "text": "ABHA linking pending",
+      "entities": []
+    },
+    {
+      "id": "clinical-abha-address-001.body",
+      "text": "The ABHA address lakshmi.devi@abdm is created but not yet linked to the hospital\nrecord. Please complete the linkage before the discharge summary is uploaded to\nthe health locker.",
+      "entities": [
+        {
+          "type": "ABHA_ADDRESS",
+          "start": 17,
+          "end": 34,
+          "maskedValue": "*************abdm"
+        }
+      ]
+    },
+    {
+      "id": "clinical-dietetics-001.subject",
+      "text": "Diet plan - renal",
+      "entities": []
+    },
+    {
+      "id": "clinical-dietetics-001.body",
+      "text": "Renal diet plan prepared for UHID 0031902. Potassium restricted to 2 g per day,\nfluid allowance 1 litre. Patient and daughter counselled. Handout given in Telugu.\nReassess at the next dialysis session.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 34,
+          "end": 41,
+          "maskedValue": "*****02"
+        }
+      ]
+    },
+    {
+      "id": "clinical-physio-001.subject",
+      "text": "Physio discharge note",
+      "entities": []
+    },
+    {
+      "id": "clinical-physio-001.body",
+      "text": "Post-operative rehab completed for the patient with low back pain (M54.50).\nIndependently mobile with a stick, stairs assessed and safe. Home exercise\nprogramme issued. No further physiotherapy input needed.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 67,
+          "end": 73,
+          "maskedValue": "******"
+        }
+      ]
+    },
+    {
+      "id": "id-aadhaar-spaced.body",
+      "text": "Aadhaar number on the consent form reads 2362 1784 3784.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 41,
+          "end": 55,
+          "maskedValue": "**********3784"
+        }
+      ]
+    },
+    {
+      "id": "id-aadhaar-hyphenated.body",
+      "text": "The registration desk typed it as 4027-3215-3292 with hyphens.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 34,
+          "end": 48,
+          "maskedValue": "**********3292"
+        }
+      ]
+    },
+    {
+      "id": "id-aadhaar-unspaced.body",
+      "text": "UID 842076390472 was captured at the counter.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 4,
+          "end": 16,
+          "maskedValue": "********0472"
+        }
+      ]
+    },
+    {
+      "id": "id-aadhaar-in-sentence.subject",
+      "text": "Aadhaar update",
+      "entities": []
+    },
+    {
+      "id": "id-aadhaar-in-sentence.body",
+      "text": "Her Aadhaar (7083 7293 2719) needs to be re-verified because the address\non the card has changed since the last visit.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 13,
+          "end": 27,
+          "maskedValue": "**********2719"
+        }
+      ]
+    },
+    {
+      "id": "id-aadhaar-two-in-one.body",
+      "text": "Mother's Aadhaar 2959 6828 4596 and father's Aadhaar 5913 4195 3818 are both\non the paediatric admission form.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 17,
+          "end": 31,
+          "maskedValue": "**********4596"
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 53,
+          "end": 67,
+          "maskedValue": "**********3818"
+        }
+      ]
+    },
+    {
+      "id": "id-pan-labelled.body",
+      "text": "PAN KEVPX6506K is required for the insurance claim above two lakhs.",
+      "entities": [
+        {
+          "type": "IN_PAN",
+          "start": 4,
+          "end": 14,
+          "maskedValue": "*******06K"
+        }
+      ]
+    },
+    {
+      "id": "id-pan-unlabelled.body",
+      "text": "Income tax details for the patient: TWHPX5807Y, filed under the old regime.",
+      "entities": [
+        {
+          "type": "IN_PAN",
+          "start": 36,
+          "end": 46,
+          "maskedValue": "*******07Y"
+        }
+      ]
+    },
+    {
+      "id": "id-abha-formatted.body",
+      "text": "ABHA number 12-9269-8996-7473 has been linked to the hospital record.",
+      "entities": [
+        {
+          "type": "ABHA_NUMBER",
+          "start": 12,
+          "end": 29,
+          "maskedValue": "*************7473"
+        }
+      ]
+    },
+    {
+      "id": "id-abha-raw-with-context.body",
+      "text": "The health ID captured at the camp was 45120099887766, entered without the\nusual hyphens. Please reformat it in the record.",
+      "entities": [
+        {
+          "type": "ABHA_NUMBER",
+          "start": 39,
+          "end": 53,
+          "maskedValue": "**********7766"
+        }
+      ]
+    },
+    {
+      "id": "id-abha-address-abdm.body",
+      "text": "Health locker address is ramesh.iyer@abdm for the discharge upload.",
+      "entities": [
+        {
+          "type": "ABHA_ADDRESS",
+          "start": 25,
+          "end": 41,
+          "maskedValue": "************abdm"
+        }
+      ]
+    },
+    {
+      "id": "id-abha-address-sbx.body",
+      "text": "Sandbox ABHA address for the integration test patient is testuser01@sbx.",
+      "entities": [
+        {
+          "type": "ABHA_ADDRESS",
+          "start": 57,
+          "end": 71,
+          "maskedValue": "**********@sbx"
+        }
+      ]
+    },
+    {
+      "id": "id-mrn-label-colon.body",
+      "text": "MRN: 0044219 - please pull the old notes from the records room.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 5,
+          "end": 12,
+          "maskedValue": "*****19"
+        }
+      ]
+    },
+    {
+      "id": "id-mrn-uhid-plain.body",
+      "text": "UHID 445901 has two duplicate entries in the system that need merging.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 5,
+          "end": 11,
+          "maskedValue": "****01"
+        }
+      ]
+    },
+    {
+      "id": "id-mrn-prefixed.body",
+      "text": "Patient ID SMH-2026-004417 was issued at the new branch.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 11,
+          "end": 26,
+          "maskedValue": "***********4417"
+        }
+      ]
+    },
+    {
+      "id": "id-mrn-hospital-no.body",
+      "text": "Hospital No. 22/4471 written on the old paper file from 2022.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 13,
+          "end": 20,
+          "maskedValue": "*****71"
+        }
+      ]
+    },
+    {
+      "id": "id-visit-ip.body",
+      "text": "IP No 2026/05120 admitted through casualty last night.",
+      "entities": [
+        {
+          "type": "PATIENT_VISIT_ID",
+          "start": 6,
+          "end": 16,
+          "maskedValue": "*******120"
+        }
+      ]
+    },
+    {
+      "id": "id-visit-op.body",
+      "text": "OP No: OP-2026-338110 for today's consultation, billing pending.",
+      "entities": [
+        {
+          "type": "PATIENT_VISIT_ID",
+          "start": 7,
+          "end": 21,
+          "maskedValue": "**********8110"
+        }
+      ]
+    },
+    {
+      "id": "id-icd-list.body",
+      "text": "Coding for the episode: E11.9 for the diabetes, I10 for the hypertension and\nD50.9 for the anaemia. Please confirm with the clinical coder.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 24,
+          "end": 29,
+          "maskedValue": "*****"
+        },
+        {
+          "type": "ICD10",
+          "start": 48,
+          "end": 51,
+          "maskedValue": "***"
+        },
+        {
+          "type": "ICD10",
+          "start": 77,
+          "end": 82,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "id-icd-with-text.body",
+      "text": "Primary diagnosis coded as N39.0, urinary tract infection, site unspecified.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 27,
+          "end": 32,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "id-phone-plain.body",
+      "text": "The patient's mobile number is 9845123456, please call before 6pm.",
+      "entities": [
+        {
+          "type": "IN_PHONE",
+          "start": 31,
+          "end": 41,
+          "maskedValue": "*******456"
+        }
+      ]
+    },
+    {
+      "id": "id-phone-country-code.body",
+      "text": "Reachable on +91 88450 33221 during the day for the appointment confirmation.",
+      "entities": [
+        {
+          "type": "IN_PHONE",
+          "start": 13,
+          "end": 28,
+          "maskedValue": "***********3221"
+        }
+      ]
+    },
+    {
+      "id": "id-phone-hyphenated.body",
+      "text": "Attendant contact 97011-22445 noted on the admission sheet.",
+      "entities": [
+        {
+          "type": "IN_PHONE",
+          "start": 18,
+          "end": 29,
+          "maskedValue": "********445"
+        }
+      ]
+    },
+    {
+      "id": "id-email-patient.body",
+      "text": "Send the report to the patient at priya.raghavan88@yahoo.co.in as requested.",
+      "entities": [
+        {
+          "type": "EMAIL_ADDRESS",
+          "start": 34,
+          "end": 62,
+          "maskedValue": "****************@yahoo.co.in"
+        }
+      ]
+    },
+    {
+      "id": "id-dob-slash.body",
+      "text": "Date of birth recorded as 09/11/1958 on the Aadhaar card.",
+      "entities": [
+        {
+          "type": "DATE_OF_BIRTH",
+          "start": 26,
+          "end": 36,
+          "maskedValue": "**********"
+        }
+      ]
+    },
+    {
+      "id": "id-dob-written.body",
+      "text": "DOB: 21 March 1990, confirmed against the birth certificate.",
+      "entities": [
+        {
+          "type": "DATE_OF_BIRTH",
+          "start": 5,
+          "end": 18,
+          "maskedValue": "*************"
+        }
+      ]
+    },
+    {
+      "id": "id-person-with-title.body",
+      "text": "Admission requested for Mrs Kalpana Venkataraman under the cardiology unit.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 28,
+          "end": 48,
+          "maskedValue": "********************"
+        }
+      ]
+    },
+    {
+      "id": "id-insurance-policy.body",
+      "text": "Policy no. HDF/HLT/2026/8871204 is active until March next year.",
+      "entities": [
+        {
+          "type": "INSURANCE_POLICY",
+          "start": 11,
+          "end": 31,
+          "maskedValue": "****************1204"
+        }
+      ]
+    },
+    {
+      "id": "id-lab-accession.body",
+      "text": "Sample accession LAB-2026-0091185 is still pending in the haematology queue.",
+      "entities": [
+        {
+          "type": "LAB_ACCESSION",
+          "start": 17,
+          "end": 33,
+          "maskedValue": "************1185"
+        }
+      ]
+    },
+    {
+      "id": "id-medical-license.body",
+      "text": "Signed by Dr Anitha Krishnan, Medical Council Reg. No. TN-56472.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 13,
+          "end": 28,
+          "maskedValue": "***************"
+        },
+        {
+          "type": "MEDICAL_LICENSE",
+          "start": 55,
+          "end": 63,
+          "maskedValue": "******72"
+        }
+      ]
+    },
+    {
+      "id": "id-bank-ifsc.body",
+      "text": "Credit the refund to account 004701548823 at IFSC YCRF0LU32LA.\nName on the account matches the patient record.",
+      "entities": [
+        {
+          "type": "BANK_ACCOUNT",
+          "start": 29,
+          "end": 41,
+          "maskedValue": "********8823"
+        },
+        {
+          "type": "IN_IFSC",
+          "start": 50,
+          "end": 61,
+          "maskedValue": "********2LA"
+        }
+      ]
+    },
+    {
+      "id": "id-upi.body",
+      "text": "Patient paid the deposit from 9845123456@ybl this morning.",
+      "entities": [
+        {
+          "type": "IN_UPI",
+          "start": 30,
+          "end": 44,
+          "maskedValue": "**********@ybl"
+        }
+      ]
+    },
+    {
+      "id": "id-passport.body",
+      "text": "Passport K4471982 attached for the medical visa letter.",
+      "entities": [
+        {
+          "type": "IN_PASSPORT",
+          "start": 9,
+          "end": 17,
+          "maskedValue": "******82"
+        }
+      ]
+    },
+    {
+      "id": "id-driving-licence.body",
+      "text": "ID proof used at admission was driving licence KA0520110044821.",
+      "entities": [
+        {
+          "type": "IN_DRIVING_LICENSE",
+          "start": 47,
+          "end": 62,
+          "maskedValue": "***********4821"
+        }
+      ]
+    },
+    {
+      "id": "id-icd-covid-u-code.subject",
+      "text": "COVID diagnosis",
+      "entities": []
+    },
+    {
+      "id": "id-icd-covid-u-code.body",
+      "text": "Confirmed diagnosis U07.1, patient isolated on ward 3.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 20,
+          "end": 25,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "id-icd-u-code-sequelae.body",
+      "text": "Post COVID-19 condition coded U09.9 for the discharge summary.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 30,
+          "end": 35,
+          "maskedValue": "*****"
+        }
+      ]
+    },
+    {
+      "id": "id-icd-external-cause.body",
+      "text": "Injury diagnosis V01.00, pedestrian struck, admitted overnight.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 17,
+          "end": 23,
+          "maskedValue": "******"
+        }
+      ]
+    },
+    {
+      "id": "neg-roster-001.subject",
+      "text": "Nursing duty roster - week of 8 June",
+      "entities": []
+    },
+    {
+      "id": "neg-roster-001.body",
+      "text": "Morning shift: Anitha, Rekha, Joseph\nEvening shift: Fatima, Ganesh, Priyanka\nNight shift: Sudha, Mohan\n\nSwaps need my approval by Friday. Leave requests go through the portal, not email.",
+      "entities": []
+    },
+    {
+      "id": "neg-meeting-001.subject",
+      "text": "Mortality and morbidity meeting - Thursday 1600",
+      "entities": []
+    },
+    {
+      "id": "neg-meeting-001.body",
+      "text": "The M&M meeting is moved to Thursday at 1600 in the third floor seminar room.\nPlease bring your department's aggregate numbers only - no patient identifiers\non the slides. IT will set up the projector by 1545.",
+      "entities": []
+    },
+    {
+      "id": "neg-procurement-001.subject",
+      "text": "Quotation required - infusion pumps",
+      "entities": []
+    },
+    {
+      "id": "neg-procurement-001.body",
+      "text": "We need quotations for 12 volumetric infusion pumps for the new ICU wing.\nPlease include AMC terms for three years and delivery timelines.\nSend quotes to the purchase department before the 20th.",
+      "entities": []
+    },
+    {
+      "id": "neg-it-001.subject",
+      "text": "Scheduled downtime - HIS",
+      "entities": []
+    },
+    {
+      "id": "neg-it-001.body",
+      "text": "The hospital information system will be down on Sunday from 0200 to 0500 for a\ndatabase upgrade. Use the paper fallback forms during that window and enter the\ndata once the system is back. Casualty will have a standby terminal.",
+      "entities": []
+    },
+    {
+      "id": "neg-training-001.subject",
+      "text": "BLS recertification - slots open",
+      "entities": []
+    },
+    {
+      "id": "neg-training-001.body",
+      "text": "Basic life support recertification runs on the 12th and the 19th.\nTwenty slots per session, first come first served. Certificates are valid for\ntwo years. Register with the education cell.",
+      "entities": []
+    },
+    {
+      "id": "neg-facilities-001.subject",
+      "text": "Water supply interruption - B block",
+      "entities": []
+    },
+    {
+      "id": "neg-facilities-001.body",
+      "text": "Maintenance will interrupt the water supply to B block on Wednesday between\n1000 and 1300 to replace a valve. Wards on that riser have been informed and\nstorage tanks are full. Theatres are unaffected.",
+      "entities": []
+    },
+    {
+      "id": "neg-pharmacy-001.subject",
+      "text": "Stock shortage - injectable iron",
+      "entities": []
+    },
+    {
+      "id": "neg-pharmacy-001.body",
+      "text": "We are down to eleven vials of injectable iron sucrose. The supplier has quoted\na two week lead time. Please restrict to inpatients until the stock arrives and\nuse the oral formulation in OPD where clinically acceptable.",
+      "entities": []
+    },
+    {
+      "id": "neg-quality-001.subject",
+      "text": "NABH audit prep - aggregate indicators",
+      "entities": []
+    },
+    {
+      "id": "neg-quality-001.body",
+      "text": "Indicator summary for the quarter:\n  Hand hygiene compliance 84 percent\n  Surgical site infection rate 1.2 percent\n  Average length of stay 4.1 days\n  Readmission within 30 days 6.8 percent\nNo case level detail in this mail - the auditors will sample from the system.",
+      "entities": []
+    },
+    {
+      "id": "neg-hr-001.subject",
+      "text": "Holiday list 2027",
+      "entities": []
+    },
+    {
+      "id": "neg-hr-001.body",
+      "text": "The declared holiday list for next year is attached. Twelve gazetted holidays\nplus two restricted holidays of your choice. Departments running 24x7 should\nplan cover as usual and submit rosters a month in advance.",
+      "entities": []
+    },
+    {
+      "id": "neg-cafeteria-001.subject",
+      "text": "Cafeteria timings during renovation",
+      "entities": []
+    },
+    {
+      "id": "neg-cafeteria-001.body",
+      "text": "The main cafeteria closes at 2000 during the renovation. The night canteen near\ncasualty stays open. Vending machines on floors 2 and 4 have been restocked.",
+      "entities": []
+    },
+    {
+      "id": "neg-biomedical-001.subject",
+      "text": "Ventilator preventive maintenance due",
+      "entities": []
+    },
+    {
+      "id": "neg-biomedical-001.body",
+      "text": "Preventive maintenance is due on six ventilators this month. The vendor engineer\nwill be on site Tuesday and Wednesday. Please release units in pairs so ICU\ncapacity is not affected. Service reports go to biomedical.",
+      "entities": []
+    },
+    {
+      "id": "neg-policy-001.subject",
+      "text": "Revised consent policy - effective 1 July",
+      "entities": []
+    },
+    {
+      "id": "neg-policy-001.body",
+      "text": "The consent policy has been revised to require a witness signature for all\nhigh risk procedures. Updated forms are in the shared drive. Departments should\ndestroy the old stock of printed forms after the changeover date.",
+      "entities": []
+    },
+    {
+      "id": "neg-cme-001.subject",
+      "text": "CME - antimicrobial stewardship",
+      "entities": []
+    },
+    {
+      "id": "neg-cme-001.body",
+      "text": "Guest lecture on antimicrobial stewardship this Saturday at 1100 in the\nauditorium. Two credit hours. The speaker will cover carbapenem sparing\nstrategies and the local antibiogram. Open to all clinical staff.",
+      "entities": []
+    },
+    {
+      "id": "neg-vendor-001.subject",
+      "text": "Payment terms clarification",
+      "entities": []
+    },
+    {
+      "id": "neg-vendor-001.body",
+      "text": "Our standard payment terms are 45 days from invoice receipt, not 30 as stated\nin your draft agreement. Please revise clause 7 and resend for signature.\nAccounts will confirm the vendor onboarding separately.",
+      "entities": []
+    },
+    {
+      "id": "neg-security-001.subject",
+      "text": "Phishing attempt - do not click",
+      "entities": []
+    },
+    {
+      "id": "neg-security-001.body",
+      "text": "Several staff have received a mail claiming to be from the payroll department\nasking them to re-enter bank details. It is not from us. Do not click the link.\nForward it to IT security and delete it.",
+      "entities": []
+    },
+    {
+      "id": "neg-research-001.subject",
+      "text": "Ethics committee agenda",
+      "entities": []
+    },
+    {
+      "id": "neg-research-001.body",
+      "text": "Four protocols are up for review at the next ethics committee meeting.\nTwo are observational, one is a device trial and one is a retrospective chart\nreview. Members will get the anonymised protocol packs three days in advance.",
+      "entities": []
+    },
+    {
+      "id": "neg-blood-bank-001.subject",
+      "text": "Blood donation camp - volunteers needed",
+      "entities": []
+    },
+    {
+      "id": "neg-blood-bank-001.body",
+      "text": "The voluntary donation camp is on the 26th in the OPD forecourt.\nWe need six volunteers for registration and refreshments. Target is 80 units.\nSign up on the sheet outside the blood bank.",
+      "entities": []
+    },
+    {
+      "id": "neg-parking-001.subject",
+      "text": "Staff parking passes - renewal",
+      "entities": []
+    },
+    {
+      "id": "neg-parking-001.body",
+      "text": "Parking passes expire at the end of the month. Renewal is through the admin\noffice with your employee card. The visitor bays near the entrance are not to\nbe used by staff at any time.",
+      "entities": []
+    },
+    {
+      "id": "neg-fire-drill-001.subject",
+      "text": "Fire drill Thursday 1500",
+      "entities": []
+    },
+    {
+      "id": "neg-fire-drill-001.body",
+      "text": "A fire drill is scheduled for Thursday at 1500. Wards should demonstrate the\nhorizontal evacuation route without moving actual patients. Marshals will be\nin yellow vests. The alarm will sound for two minutes.",
+      "entities": []
+    },
+    {
+      "id": "neg-signage-001.subject",
+      "text": "New signage installed",
+      "entities": []
+    },
+    {
+      "id": "neg-signage-001.body",
+      "text": "New wayfinding signage is up across the ground floor. The radiology arrow near\nthe lifts is wrong and will be corrected on Monday. Report any other errors to\nthe facilities helpdesk.",
+      "entities": []
+    },
+    {
+      "id": "unicode.aadhaar-devanagari-digits",
+      "text": "Aadhaar \u096d\u096b\u0969\u096a \u096d\u096f\u0969\u0966 \u096d\u096a\u096c\u0966 collected at the enrolment camp.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 8,
+          "end": 22,
+          "maskedValue": "**********\u096d\u096a\u096c\u0966"
+        }
+      ]
+    },
+    {
+      "id": "unicode.aadhaar-devanagari-label",
+      "text": "\u0906\u0927\u093e\u0930 7534 7930 7460 collected at the camp.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 5,
+          "end": 19,
+          "maskedValue": "**********7460"
+        }
+      ]
+    },
+    {
+      "id": "unicode.pan-zero-width-joiner",
+      "text": "PAN HKP\u200dPS5875Q filed with the form 16 return.",
+      "entities": [
+        {
+          "type": "IN_PAN",
+          "start": 4,
+          "end": 15,
+          "maskedValue": "********75Q"
+        }
+      ]
+    },
+    {
+      "id": "unicode.pan-zero-width-space",
+      "text": "PAN HKPPS\u200b5875Q filed with the income tax return.",
+      "entities": [
+        {
+          "type": "IN_PAN",
+          "start": 4,
+          "end": 15,
+          "maskedValue": "********75Q"
+        }
+      ]
+    },
+    {
+      "id": "unicode.uhid-fullwidth-digits",
+      "text": "UHID \uff10\uff10\uff12\uff14\uff15\uff11\uff18 admitted for treatment.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 5,
+          "end": 12,
+          "maskedValue": "*****\uff11\uff18"
+        }
+      ]
+    },
+    {
+      "id": "unicode.phone-devanagari-digits",
+      "text": "Patient mobile number \u096f\u096e\u096a\u096b\u0967\u0968\u0969\u096a\u096b\u096c for follow up.",
+      "entities": [
+        {
+          "type": "IN_PHONE",
+          "start": 22,
+          "end": 32,
+          "maskedValue": "*******\u096a\u096b\u096c"
+        }
+      ]
+    }
+  ]
+}

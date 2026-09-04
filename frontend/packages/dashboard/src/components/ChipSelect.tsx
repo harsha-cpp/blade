@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export default function ChipSelect<T extends string>({
   options,
   selected,
@@ -11,6 +13,8 @@ export default function ChipSelect<T extends string>({
   labelFor: (value: T) => string;
   label?: string;
 }) {
+  const labelId = useId();
+
   function toggle(value: T) {
     onChange(
       selected.includes(value)
@@ -20,8 +24,16 @@ export default function ChipSelect<T extends string>({
   }
 
   return (
-    <div className="field">
-      {label && <span className="label">{label}</span>}
+    <div
+      className="field"
+      role="group"
+      {...(label ? { "aria-labelledby": labelId } : {})}
+    >
+      {label && (
+        <span className="label" id={labelId}>
+          {label}
+        </span>
+      )}
       <div className="chip-list">
         {options.map((option) => (
           <button

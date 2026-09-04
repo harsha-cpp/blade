@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from blade_detection.config import DetectionConfig
 from blade_detection.masking import mask_value
 from blade_detection.models import Entity, EntitySource
+from blade_detection.normalization import FoldedText, fold, value_fingerprint
 from blade_detection.recognition.ner import (
     NER_CONFIDENCE,
     NER_PRIORITY,
     NlpModelUnavailableError,
     person_spans,
 )
+from blade_detection.recognition.pattern_safety import is_safe_pattern
 from blade_detection.recognition.patterns import RawMatch, apply_rules
-from blade_detection.recognition.resolution import group_by_value, resolve_overlaps
+from blade_detection.recognition.resolution import resolve_overlaps
 from blade_detection.rules import BUILTIN_RULE_PACK
 from blade_detection.rules.schema import Rule, RulePack
 
@@ -18,8 +22,7 @@ __all__ = [
     "NlpModelUnavailableError",
     "RawMatch",
     "analyze",
-    "group_by_value",
-    "resolve_matches",
+    "custom_mrn_rules",
 ]
 
 
@@ -43,7 +46,7 @@ def _enabled_types(config: DetectionConfig) -> frozenset[str] | None:
     )
 
 
-def _custom_mrn_rules(config: DetectionConfig) -> list[Rule]:
+def custom_mrn_rules(config: DetectionConfig) -> list[Rule]:
     return [
         Rule(
             entity_type="MRN",
@@ -53,12 +56,15 @@ def _custom_mrn_rules(config: DetectionConfig) -> list[Rule]:
             priority=55,
         )
         for index, pattern in enumerate(config.recognizers.custom_mrn_patterns, start=1)
-        if 0 < len(pattern) <= 200
+        if is_safe_pattern(pattern)
     ]
 
 
-def resolve_matches(matches: list[RawMatch]) -> list[RawMatch]:
-    return resolve_overlaps(matches)
+def _in_source_text(match: RawMatch, folded: FoldedText) -> RawMatch:
+    if folded.offsets is None:
+        return match
+    start, end = folded.original_span(match.start, match.end)
+    return replace(match, value=folded.source[start:end], start=start, end=end)
 
 
 def analyze(
@@ -73,8 +79,9 @@ def analyze(
         return []
 
     pack = rule_pack or BUILTIN_RULE_PACK
-    rules = pack.for_types(_enabled_types(config)) + _custom_mrn_rules(config)
-    matches = apply_rules(rules, text)
+    rules = pack.for_types(_enabled_types(config)) + custom_mrn_rules(config)
+    folded = fold(text)
+    matches = [_in_source_text(match, folded) for match in apply_rules(rules, folded.text)]
 
     if config.nlp.use_ner:
         matches.extend(
@@ -94,7 +101,8 @@ def analyze(
     return [
         Entity(
             type=match.entity_type,
-            masked_value=mask_value(match.value),
+            masked_value=mask_value(match.value, match.entity_type),
+            value_hash=value_fingerprint(match.entity_type, match.value),
             confidence=match.confidence,
             source=source,
             attachment_id=attachment_id,

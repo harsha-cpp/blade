@@ -223,7 +223,7 @@ async def test_quarantined_message_appears_in_the_review_queue(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert listing.status_code == 200, listing.text
-    items = listing.json()
+    items = listing.json()["items"]
     assert any(item["id"] == verdict["quarantine_id"] for item in items)
 
     org_id = await db_session.scalar(

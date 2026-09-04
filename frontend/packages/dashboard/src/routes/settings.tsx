@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { orgsApi } from "../api/orgs";
 import { authApi } from "../api/auth";
@@ -15,6 +15,7 @@ export default function SettingsRoute() {
   const { organization, refresh, member, can } = useAuth();
   const qc = useQueryClient();
 
+  const orgId = organization?.id;
   const [name, setName] = useState(organization?.name ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -28,6 +29,10 @@ export default function SettingsRoute() {
       setTimeout(() => setSaved(false), 2000);
     },
   });
+
+  useEffect(() => {
+    setName(organization?.name ?? "");
+  }, [orgId, organization?.name]);
 
   const regen = useMutation({
     mutationFn: orgsApi.regenerateCode,

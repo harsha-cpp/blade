@@ -1,24 +1,40 @@
 from __future__ import annotations
 
-import hashlib
 import time
 from collections import OrderedDict, deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Sequence
 from typing import cast
 
-from redis.asyncio import Redis
 from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from blade_backend.auth.jwt import TokenError, decode_access_token
+from blade_backend.observability.redis_gate import RedisGate, hit_counter
 from blade_backend.settings import get_settings
 
 _UNKNOWN_CLIENT = "unknown"
 
 ATTACHMENT_UPLOAD_PATH = "/api/v1/scan/attachment"
 MULTIPART_ENVELOPE_BYTES = 64 * 1024
+
+LANDING_CORS_PATHS = (
+    "/api/v1/public/access-requests",
+    "/api/v1/public/signup-status",
+)
+
+NO_STORE_PATH_PREFIXES = (
+    "/api/v1/auth/login",
+    "/api/v1/auth/refresh",
+    "/api/v1/auth/signup",
+    "/api/v1/auth/switch-org",
+    "/api/v1/auth/mfa",
+    "/api/v1/members/accept-invite",
+    "/api/v1/devices/enroll",
+)
 
 
 def request_body_limit(path: str) -> int:
@@ -129,13 +145,31 @@ def resolve_client_ip(request: Request, trusted_proxy_count: int) -> str:
     return parts[-trusted_proxy_count]
 
 
+def carries_credentials(path: str) -> bool:
+    return path.rstrip("/").startswith(NO_STORE_PATH_PREFIXES)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
         response.headers["content-security-policy"] = "frame-ancestors 'none'"
         response.headers["x-content-type-options"] = "nosniff"
         response.headers["referrer-policy"] = "no-referrer"
+        if carries_credentials(request.url.path):
+            response.headers["cache-control"] = "no-store"
         return response
+
+
+class PathScopedCORSMiddleware(CORSMiddleware):
+    def __init__(self, app: ASGIApp, *, paths: Sequence[str], **options: object) -> None:
+        super().__init__(app, **options)  # pyright: ignore[reportArgumentType]
+        self._paths = tuple(paths)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or str(scope.get("path", "")).rstrip("/") not in self._paths:
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -150,8 +184,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._limit_override = limit
         self._window_seconds = window_seconds
         self._buckets: OrderedDict[str, deque[float]] = OrderedDict()
-        self._redis: Redis | None = None
-        self._redis_checked = False
+        self._redis = RedisGate()
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
@@ -175,38 +208,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return get_settings().api_rate_limit_per_minute
 
     async def _over_limit(self, key: str) -> bool:
-        redis = await self._get_redis()
+        redis = await self._redis.client()
         if redis is not None:
             try:
-                count = await redis.incr(f"apirl:{key}")
-                if count == 1:
-                    await redis.expire(f"apirl:{key}", self._window_seconds)
+                count = await hit_counter(redis, f"apirl:{key}", self._window_seconds)
             except Exception:
-                self._redis = None
+                self._redis.drop()
             else:
                 return count > self._limit
         return self._over_limit_memory(key)
-
-    async def _get_redis(self) -> Redis | None:
-        if self._redis_checked:
-            return self._redis
-        self._redis_checked = True
-        try:
-            redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
-                get_settings().redis_url,
-                socket_connect_timeout=0.05,
-                socket_timeout=0.05,
-                decode_responses=True,
-            )
-            ping = cast(
-                Callable[[], Awaitable[object]],
-                redis.ping,  # pyright: ignore[reportUnknownMemberType]
-            )
-            await ping()
-            self._redis = redis
-        except Exception:
-            self._redis = None
-        return self._redis
 
     def _over_limit_memory(self, key: str) -> bool:
         now = time.monotonic()
@@ -229,13 +239,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._buckets.popitem(last=False)
 
     def _key(self, request: Request) -> str:
-        authorization = request.headers.get("authorization")
-        if authorization:
-            digest = hashlib.sha256(authorization.encode("utf-8")).hexdigest()
-            return f"auth:{digest}"
-        device_token = request.headers.get("x-blade-device-token")
-        if device_token:
-            digest = hashlib.sha256(device_token.encode("utf-8")).hexdigest()
-            return f"device:{digest}"
+        member_id = verified_member_subject(request.headers.get("authorization"))
+        if member_id is not None:
+            return f"member:{member_id}"
         client = resolve_client_ip(request, get_settings().trusted_proxy_count)
         return f"ip:{client}"
+
+
+def verified_member_subject(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, _separator, token = authorization.partition(" ")
+    candidate = token.strip()
+    if scheme.lower() != "bearer" or not candidate:
+        return None
+    try:
+        return decode_access_token(candidate).sub
+    except TokenError:
+        return None

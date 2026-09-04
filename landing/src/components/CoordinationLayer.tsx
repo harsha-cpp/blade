@@ -1,6 +1,5 @@
-import Button from "./ui/Button";
+import PrimaryCta from "./ui/PrimaryCta";
 import Lottie from "./ui/Lottie";
-import { links } from "@/lib/links";
 
 function Label({
   line1,
@@ -38,7 +37,7 @@ export default function CoordinationLayer() {
       >
         <div className="flex w-full max-w-[1720px] items-end justify-start gap-x-10 gap-y-[10px] overflow-clip">
           <div className="flex w-full flex-col items-start justify-center gap-8 pb-[76px]">
-            <p className="eyebrow text-blue">the honest edge</p>
+            <p className="eyebrow text-blue">The honest edge</p>
             <h3 className="max-w-[1360px] whitespace-pre-wrap font-rsm text-[40px] tab:text-[68px] desk:text-[104px] leading-[1.05] desk:leading-[104px] tracking-[-3.12px] text-cream">
               Text with no identifier in it is not detected
             </h3>
@@ -83,14 +82,11 @@ export default function CoordinationLayer() {
                   {"Documented up front,\nnot discovered later"}
                 </p>
               </div>
-              <Button
-                href={links.createAccount}
+              <PrimaryCta
                 variant="primary"
                 size="md"
                 className="mt-[64px] w-full max-w-[1360px]"
-              >
-                Get started
-              </Button>
+              />
             </div>
           </div>
         </div>

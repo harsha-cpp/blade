@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Search } from "lucide-react";
 import { auditApi, type AuditEvent } from "../api/audit";
@@ -12,6 +12,8 @@ import {
   type ChainState,
 } from "../lib/audit";
 import { downloadCsv, formatTime, shortHash } from "../lib/format";
+import { useDebouncedValue } from "../lib/use-debounced-value";
+import { useAuth } from "../lib/auth";
 import { errorMessage } from "../lib/errors";
 import PageHeader from "../components/PageHeader";
 import { SkeletonRows } from "../components/Skeletons";
@@ -24,11 +26,22 @@ export default function AuditRoute() {
 
   const [pages, setPages] = useState<string[]>([]);
   const cursor = pages[pages.length - 1];
+  const debouncedSearch = useDebouncedValue(search, 300);
+
+  useEffect(() => {
+    setPages([]);
+  }, [debouncedSearch]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["audit", search, category, actor, cursor],
+    queryKey: ["audit", debouncedSearch, category, actor, cursor],
     queryFn: () =>
-      auditApi.list({ search, category, actor, cursor, limit: 50 }),
+      auditApi.list({
+        search: debouncedSearch,
+        category,
+        actor,
+        cursor,
+        limit: 50,
+      }),
     staleTime: 10_000,
   });
 
@@ -38,15 +51,19 @@ export default function AuditRoute() {
     staleTime: 60_000,
   });
 
+  const { can } = useAuth();
+  const canVerifyChain = can("verifyAuditChain");
   const { data: chainStatus } = useQuery({
     queryKey: ["audit-chain"],
     queryFn: () => auditApi.chain(),
     staleTime: 30_000,
+    enabled: canVerifyChain,
+    retry: false,
   });
 
   const rows = useMemo(() => data?.events ?? [], [data]);
   const contiguous =
-    !search.trim() && !category && !actor && pages.length === 0;
+    !debouncedSearch.trim() && !category && !actor && pages.length === 0;
   const chain = useMemo(
     () => verifyChain(rows, contiguous),
     [rows, contiguous],
@@ -85,10 +102,7 @@ export default function AuditRoute() {
           <Search size={15} />
           <input
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              resetPaging();
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search actor, action, hash"
             aria-label="Search audit log"
           />
@@ -139,7 +153,15 @@ export default function AuditRoute() {
         className={chainFailed ? "callout callout-warn" : "callout"}
         style={{ marginBottom: 16 }}
       >
-        {chainStatus && !chainStatus.ok ? (
+        {!canVerifyChain ? (
+          <>
+            <strong>
+              Server-side verification is run by owners and admins.
+            </strong>{" "}
+            This page still checks that each visible row links to the one before
+            it.
+          </>
+        ) : chainStatus && !chainStatus.ok ? (
           <>
             <strong>
               Chain verification failed at entry {chainStatus.broken_at}.
@@ -153,7 +175,7 @@ export default function AuditRoute() {
             <strong>
               All {chainStatus.checked} entries verified server-side.
             </strong>{" "}
-            Every row\'s hash covers the one before it across the whole log, not
+            Every row's hash covers the one before it across the whole log, not
             just this page.
           </>
         ) : !contiguous ? (
@@ -166,7 +188,7 @@ export default function AuditRoute() {
             <strong>
               {broken} link{broken === 1 ? "" : "s"} did not verify.
             </strong>{" "}
-            An entry\'s recorded predecessor hash does not match the row before
+            An entry's recorded predecessor hash does not match the row before
             it. Treat this log as suspect and escalate.
           </>
         ) : (
@@ -174,7 +196,7 @@ export default function AuditRoute() {
             <strong>
               {linked} consecutive link{linked === 1 ? "" : "s"} verified.
             </strong>{" "}
-            Each row\'s hash covers the one before it, so nothing has been
+            Each row's hash covers the one before it, so nothing has been
             removed from this range.
           </>
         )}

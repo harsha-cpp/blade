@@ -11,8 +11,32 @@ import { severityLabel, type Severity } from "./risk";
 export const ORDER_STEP = 10;
 export const MAX_RULES = 200;
 
-export function renumber(rules: PolicyRule[]): PolicyRule[] {
-  return rules.map((rule, i) => ({ ...rule, order: (i + 1) * ORDER_STEP }));
+export interface DraftRule extends PolicyRule {
+  key: string;
+}
+
+let draftKeySeed = 0;
+
+export function nextDraftKey(): string {
+  draftKeySeed += 1;
+  return `draft-${draftKeySeed}`;
+}
+
+export function seedDraft(rules: PolicyRule[]): DraftRule[] {
+  return renumber(rules.map((rule) => ({ ...rule, key: nextDraftKey() })));
+}
+
+export function stripDraftKeys(rules: PolicyRule[]): PolicyRule[] {
+  return rules.map((rule) => {
+    const { key: _key, ...rest } = rule as PolicyRule & { key?: string };
+    return rest;
+  });
+}
+
+export function renumber<T extends PolicyRule>(rules: T[]): T[] {
+  return rules.map(
+    (rule, i) => ({ ...rule, order: (i + 1) * ORDER_STEP }) as T,
+  );
 }
 
 export function inEvaluationOrder(rules: PolicyRule[]): PolicyRule[] {
@@ -22,11 +46,11 @@ export function inEvaluationOrder(rules: PolicyRule[]): PolicyRule[] {
     .map(({ rule }) => rule);
 }
 
-export function moveRule(
-  rules: PolicyRule[],
+export function moveRule<T extends PolicyRule>(
+  rules: T[],
   index: number,
   direction: -1 | 1,
-): PolicyRule[] {
+): T[] {
   const target = index + direction;
   if (
     index < 0 ||
@@ -42,19 +66,19 @@ export function moveRule(
   return renumber(next);
 }
 
-export function removeRule(rules: PolicyRule[], id: string): PolicyRule[] {
-  return renumber(rules.filter((r) => r.id !== id));
+export function removeRule(rules: DraftRule[], key: string): DraftRule[] {
+  return renumber(rules.filter((r) => r.key !== key));
 }
 
 export function updateRule(
-  rules: PolicyRule[],
-  id: string,
+  rules: DraftRule[],
+  key: string,
   patch: Partial<PolicyRule>,
-): PolicyRule[] {
-  return rules.map((r) => (r.id === id ? { ...r, ...patch } : r));
+): DraftRule[] {
+  return rules.map((r) => (r.key === key ? { ...r, ...patch } : r));
 }
 
-export function newRule(existing: PolicyRule[]): PolicyRule {
+export function newRule(existing: PolicyRule[]): DraftRule {
   const taken = new Set(existing.map((r) => r.id));
   let n = existing.length + 1;
   let id = `custom-rule-${n}`;
@@ -63,6 +87,7 @@ export function newRule(existing: PolicyRule[]): PolicyRule {
     id = `custom-rule-${n}`;
   }
   return {
+    key: nextDraftKey(),
     id,
     description: "",
     enabled: true,
@@ -116,7 +141,7 @@ export function toPolicySetIn(
   rules: PolicyRule[],
   version: string,
 ): PolicySetIn {
-  return { version, rules: renumber(rules) };
+  return { version, rules: renumber(stripDraftKeys(rules)) };
 }
 
 export const CUSTOM_VERSION = "custom";
@@ -131,7 +156,10 @@ export function isDirty(
   draft: PolicyRule[],
 ): boolean {
   if (!saved) return false;
-  return stableJson(renumber(saved.rules)) !== stableJson(renumber(draft));
+  return (
+    stableJson(renumber(stripDraftKeys(saved.rules))) !==
+    stableJson(renumber(stripDraftKeys(draft)))
+  );
 }
 
 function stableJson(value: unknown): string {

@@ -19,18 +19,3 @@ def resolve_overlaps(matches: list[RawMatch]) -> list[RawMatch]:
             continue
         kept.append(candidate)
     return sorted(kept, key=lambda match: (match.start, match.end))
-
-
-def _normalize(entity_type: str, value: str) -> str:
-    compact = value.strip().upper()
-    if entity_type in {"PERSON", "EMAIL_ADDRESS", "ABHA_ADDRESS", "IN_UPI"}:
-        return " ".join(compact.split())
-    return "".join(character for character in compact if character.isalnum())
-
-
-def group_by_value(matches: list[RawMatch]) -> dict[tuple[str, str], list[RawMatch]]:
-    grouped: dict[tuple[str, str], list[RawMatch]] = {}
-    for match in matches:
-        key = (match.entity_type, _normalize(match.entity_type, match.value))
-        grouped.setdefault(key, []).append(match)
-    return grouped

@@ -91,7 +91,7 @@ export default function LeakChart({ className }: { className?: string }) {
               style={{ backgroundColor: s.color }}
               aria-hidden
             />
-            <span className="font-sysmono text-[10.5px] uppercase leading-none tracking-[0.02em] text-stone">
+            <span className="font-sysmono text-[10.5px] leading-none tracking-[0.02em] text-stone">
               {s.label}
             </span>
           </span>

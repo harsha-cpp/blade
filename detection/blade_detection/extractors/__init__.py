@@ -4,6 +4,7 @@ import zipfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from email import message_from_bytes
+from email.message import Message
 from email.policy import default as default_email_policy
 from importlib import import_module
 from io import BytesIO
@@ -13,7 +14,7 @@ from typing import Protocol, cast
 import structlog
 from PIL import Image
 
-from blade_detection.extractors import docx, image, pdf, pptx, text, xlsx
+from blade_detection.extractors import docx, html, image, pdf, pptx, text, xlsx
 from blade_detection.extractors.budget import ExtractionBudget
 from blade_detection.extractors.issues import ExtractionIssue, unique_issues
 from blade_detection.models import Attachment
@@ -43,6 +44,8 @@ _EXTENSION_KINDS: dict[str, str] = {
     ".log": "text",
     ".json": "text",
     ".md": "text",
+    ".html": "html",
+    ".htm": "html",
     ".rtf": "rtf",
     ".eml": "email",
     ".zip": "archive",
@@ -241,6 +244,11 @@ def _extract_kind(
     if kind == "text":
         plain = text.extract(data, filename=filename)
         return ExtractionResult(plain.text, [], _errors(attachment_id, plain.issues))
+    if kind == "html":
+        markup = text.extract(data, filename=filename)
+        return ExtractionResult(
+            html.to_text(markup.text), [], _errors(attachment_id, markup.issues)
+        )
     if kind == "rtf":
         rich = text.extract_rtf(data)
         return ExtractionResult(rich.text, [], _errors(attachment_id, rich.issues))
@@ -348,6 +356,8 @@ def _kind_from_mime(mime: str) -> str | None:
         return "xlsx"
     if normalized == PPTX_MIME:
         return "pptx"
+    if normalized in {"text/html", "application/xhtml+xml"}:
+        return "html"
     if normalized in {"application/rtf", "text/rtf"}:
         return "rtf"
     if normalized in {"message/rfc822", "application/vnd.ms-outlook"}:
@@ -370,6 +380,37 @@ def _detect_mime(data: bytes, fallback: str) -> str:
         return magic.from_buffer(data[:4096], mime=True) or fallback
     except Exception:
         return fallback
+
+
+def _leaf_parts(message: Message[str, str]) -> list[Message[str, str]]:
+    if not message.is_multipart():
+        return [message]
+    payload = message.get_payload()
+    if not isinstance(payload, list):
+        return [message]
+    parts = [
+        cast("Message[str, str]", part)
+        for part in cast(list[object], payload)
+        if isinstance(part, Message)
+    ]
+    if message.get_content_type() == "multipart/alternative":
+        preferred = _preferred_alternative(parts)
+        return _leaf_parts(preferred) if preferred is not None else []
+    leaves: list[Message[str, str]] = []
+    for part in parts:
+        leaves.extend(_leaf_parts(part))
+    return leaves
+
+
+def _preferred_alternative(
+    parts: list[Message[str, str]],
+) -> Message[str, str] | None:
+    if not parts:
+        return None
+    for part in parts:
+        if part.get_content_type() == "text/plain" and not part.get_filename():
+            return part
+    return parts[-1]
 
 
 def _extract_email(
@@ -398,9 +439,7 @@ def _extract_email(
     if len(kept_headers) < len(headers):
         errors.extend(_errors(attachment_id, [ExtractionIssue.EXTRACTION_CHAR_LIMIT]))
 
-    for part in message.walk():
-        if part.is_multipart():
-            continue
+    for part in _leaf_parts(message):
         payload = part.get_payload(decode=True)
         if not isinstance(payload, bytes):
             continue
@@ -421,6 +460,8 @@ def _extract_email(
         part_id = f"{attachment_id}:{filename or content_type}"
         if content_type in {"text/plain", "text/html"} and not filename:
             decoded = text.decode(payload)
+            if content_type == "text/html":
+                decoded = html.to_text(decoded)
             kept = budget.take_characters(decoded)
             _append_chunk(chunks, budget, kept)
             if len(kept) < len(decoded):

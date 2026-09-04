@@ -42,3 +42,31 @@ def email_verification_email(*, base_url: str, token: str, ttl_hours: int) -> Me
         f"This link expires in {ttl_hours} hours.\n"
     )
     return subject, body
+
+
+def access_request_email(
+    *,
+    organization: str,
+    name: str,
+    email: str,
+    phone: str | None,
+    role: str | None,
+    size: str | None,
+    message: str | None,
+    submitted_at: str,
+) -> Message:
+    subject = f"Blade DLP access request: {organization}"
+    lines = [
+        f"Organization: {organization}",
+        f"Name: {name}",
+        f"Email: {email}",
+        f"Phone: {phone or '-'}",
+        f"Role: {role or '-'}",
+        f"Size: {size or '-'}",
+        f"Submitted: {submitted_at}",
+        "",
+        "Message:",
+        message or "-",
+        "",
+    ]
+    return subject, "\n".join(lines)

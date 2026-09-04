@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import Button from "./ui/Button";
-import { links } from "@/lib/links";
+import PrimaryCta from "./ui/PrimaryCta";
 
 const rows = [
   {
@@ -79,7 +78,7 @@ export default function UseCases() {
 
         <div className="mx-auto grid max-w-[1800px] grid-cols-1 items-start gap-x-20 gap-y-10 px-5 tab:px-10 lg:grid-cols-[416px_392px_392px] lg:gap-y-0">
           <div className="pb-6 lg:row-start-1 lg:pb-10 lg:[grid-column:1/span_3]">
-            <p className="font-mono text-[20px] uppercase leading-[20px] tracking-[-0.6px] text-blue">
+            <p className="font-mono text-[20px] leading-[20px] tracking-[-0.6px] text-blue">
               Built for hospital teams
             </p>
             <h2 className="mt-4 font-rsm text-[44px] tab:text-[86px] desk:text-[160px] leading-[1.02] desk:leading-[160px] tracking-[-1.2px] desk:tracking-[-4.8px] text-cream">
@@ -120,7 +119,7 @@ export default function UseCases() {
                 className={`max-w-[456px] ${pad}`}
                 style={reveal(i)}
               >
-                <p className="font-mono text-[16px] uppercase leading-[16px] tracking-[-0.48px] text-blue">
+                <p className="font-mono text-[16px] leading-[16px] tracking-[-0.48px] text-blue">
                   {r.eyebrow}
                 </p>
                 <h4 className="mt-4 font-rsm text-[26px] leading-[30px] tracking-[-0.5px] text-cream tab:text-[40px] tab:leading-[44px] tab:tracking-[-0.8px]">
@@ -148,14 +147,11 @@ export default function UseCases() {
       </div>
 
       <div className="flex w-full flex-col items-center justify-center gap-10 overflow-clip px-10 pt-16">
-        <Button
-          href={links.createAccount}
+        <PrimaryCta
           variant="primary"
           size="lg"
           className="w-full max-w-[1720px]"
-        >
-          Get started
-        </Button>
+        />
       </div>
     </section>
   );

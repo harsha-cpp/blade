@@ -23,6 +23,7 @@ BACKUP_CODE_COUNT = 10
 _BACKUP_CODE_BYTES = 5
 _NONCE_BYTES = 12
 _TOTP_VALID_WINDOW = 1
+_CHALLENGE_ID_BYTES = 16
 
 
 class MfaError(ValueError):
@@ -33,6 +34,7 @@ class MfaError(ValueError):
 class MfaChallenge:
     member_id: UUID
     org_id: UUID
+    challenge_id: str
 
 
 def generate_secret() -> str:
@@ -109,6 +111,7 @@ def issue_challenge_token(
         "sub": str(member_id),
         "org_id": str(org_id),
         "type": CHALLENGE_TOKEN_TYPE,
+        "jti": secrets.token_urlsafe(_CHALLENGE_ID_BYTES),
         "iat": int(issued_at.timestamp()),
         "exp": int((issued_at + timedelta(seconds=CHALLENGE_TTL_SECONDS)).timestamp()),
     }
@@ -124,7 +127,7 @@ def decode_challenge_token(token: str, *, settings: Settings | None = None) -> M
                 token,
                 resolved.jwt_secret_value,
                 algorithms=[resolved.jwt_algorithm],
-                options={"require": ["exp", "sub", "type"]},
+                options={"require": ["exp", "sub", "type", "jti"]},
             ),
         )
     except jwt.InvalidTokenError as exc:
@@ -133,9 +136,12 @@ def decode_challenge_token(token: str, *, settings: Settings | None = None) -> M
         raise MfaError("invalid mfa challenge")
     subject = decoded.get("sub")
     org = decoded.get("org_id")
+    challenge_id = decoded.get("jti")
     if not isinstance(subject, str) or not isinstance(org, str):
         raise MfaError("invalid mfa challenge")
+    if not isinstance(challenge_id, str) or not challenge_id:
+        raise MfaError("invalid mfa challenge")
     try:
-        return MfaChallenge(member_id=UUID(subject), org_id=UUID(org))
+        return MfaChallenge(member_id=UUID(subject), org_id=UUID(org), challenge_id=challenge_id)
     except ValueError as exc:
         raise MfaError("invalid mfa challenge") from exc

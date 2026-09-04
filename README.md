@@ -139,7 +139,9 @@ Implemented today:
   send-button clicks that would put patient data into an editable field.
 - **Dashboard.** Auth, organizations, domains, members, devices, policy editing
   and simulation, quarantine review, audit log, and detection analytics split by
-  channel and by site.
+  channel and by site. Set the build-time `VITE_LANDING_URL` (read the same way
+  as `VITE_API_BASE_URL`) to point the sign-in page's request-access link at the
+  marketing site; leave it unset and it points at the in-app invitation notice.
 
 Not implemented, despite the code that looks like it is:
 `backend/blade_backend/observability/metrics.py` declares five Prometheus
@@ -190,12 +192,25 @@ The service worker posts to `POST /api/v1/events` with `channel: "web"` and
 with `category="scan"`, whose metadata carries the channel, the site host, the
 entity types, the entity count, the risk score and the severity.
 
+The call is authorized by the per-install device token in
+`chrome.storage.local` when one is stored, sent as `X-Blade-Device-Token`; an
+install that has not been enrolled yet falls back to the organization code.
+
 What leaves the browser: entity types, masked values, a risk score, a severity,
-the hostname, the organization code and a client event ID. What does not: the
-typed or pasted text, the page URL, the page title, the field name, and any DOM
-context. Repeated blocks of the same finding on the same site are collapsed to
-one report per 60 seconds (`WEB_BLOCK_DEDUPE_MS`), and nothing is reported at
-all if the install has no organization code stored.
+the hostname, a client event ID, and the credential above. An enrolled install
+sends neither the organization code nor the last observed Gmail address, because
+the backend attributes the event to the enrolled member instead. What does not
+leave: the typed or pasted text, the page URL, the page title, the field name,
+and any DOM context. Repeated blocks of the same finding on the same site are
+collapsed to one report per 60 seconds (`WEB_BLOCK_DEDUPE_MS`), and nothing is
+reported at all if the install has neither credential stored.
+
+Three safeguards keep the record honest. Only a block caused by a trusted
+browser event is reported: a block caused by an event a page script dispatched
+itself is still enforced and still shows the notice, but is never recorded. The
+service worker re-derives the hostname from the sending frame's own URL and
+drops any report claiming a different one. And the worker caps itself at
+`WEB_BLOCK_RATE_BURST` reports per minute, so no page can flood the audit log.
 
 Full detail is in [`docs/privacy.md`](docs/privacy.md) and
 [`docs/adr/0004-report-web-blocks-for-audit.md`](docs/adr/0004-report-web-blocks-for-audit.md).
@@ -241,7 +256,11 @@ around it. Chrome blocks content scripts on `chrome://` pages, the Chrome Web
 Store and other extensions' pages, so the web input guard cannot run there
 either. A hard guarantee needs Workspace admin force-install plus server-side
 Gmail content compliance rules or the Gmail API; that is deliberately out of
-scope today.
+scope today. Send interception reads the Gmail interface in English, Hindi,
+Marathi, Bengali, Gujarati, Tamil, Telugu, Kannada and Malayalam, and falls back
+to identifying the send control by compose structure in any other display
+language; when neither the label nor the structure identifies it, the keyboard
+send is blocked with a notice rather than allowed through unscanned.
 
 ## License
 

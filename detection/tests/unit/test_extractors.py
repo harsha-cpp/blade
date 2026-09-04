@@ -17,6 +17,7 @@ from PIL import Image
 from blade_detection.api import detect_email
 from blade_detection.extractors import extract_attachment, extract_bytes
 from blade_detection.extractors.budget import MAX_EXTRACTION_CHARS, ExtractionBudget
+from blade_detection.extractors.html import to_text
 from blade_detection.extractors.issues import ExtractionIssue
 from blade_detection.extractors.pdf import MAX_PDF_PAGES, MAX_RENDER_PIXELS, extract_pages
 from blade_detection.models import Attachment, EmailPayload
@@ -424,3 +425,63 @@ def test_unreadable_image_is_reported_not_silently_skipped() -> None:
 
     assert result.ocr_sources == []
     assert result.errors
+
+
+HTML_TABLE = (
+    "<html><head><style>td{color:red}</style></head><body>"
+    "<table><tr><td>UHID</td><td>0024518</td></tr>"
+    "<tr><td>Name</td><td>Ramesh Kumar Iyer</td></tr></table>"
+    "<script>var tracker = 1;</script></body></html>"
+)
+
+
+def test_html_attachment_is_stripped_to_text() -> None:
+    result = extract_bytes(HTML_TABLE.encode("utf-8"), "summary.html", "text/html", "a1")
+
+    assert "<td>" not in result.text
+    assert "var tracker" not in result.text
+    assert "td{color:red}" not in result.text
+    assert "UHID 0024518" in result.text
+
+
+def test_html_table_cells_still_yield_an_mrn() -> None:
+    result = detect_email(
+        EmailPayload(body=to_text(HTML_TABLE)),
+    )
+    assert "MRN" in {entity.type for entity in result.entities}
+
+
+def test_html_email_part_is_stripped_not_appended_raw() -> None:
+    message = EmailMessage()
+    message["Subject"] = "Lab result"
+    message.set_content(
+        "<html><body><table><tr><td>UHID</td><td>0024518</td></tr></table></body></html>",
+        subtype="html",
+    )
+
+    result = extract_bytes(bytes(message), "result.eml", "message/rfc822", "a1")
+
+    assert "<td>" not in result.text
+    assert "UHID 0024518" in result.text
+
+
+def test_multipart_alternative_prefers_the_plain_text_part() -> None:
+    message = EmailMessage()
+    message["Subject"] = "Discharge summary"
+    message.set_content("Plain part: UHID 0024518 for the patient.")
+    message.add_alternative(
+        "<html><body><p>Rich part: UHID 0099887 for the patient.</p></body></html>",
+        subtype="html",
+    )
+
+    result = extract_bytes(bytes(message), "note.eml", "message/rfc822", "a1")
+
+    assert "0024518" in result.text
+    assert "0099887" not in result.text
+
+
+def test_html_entities_are_decoded() -> None:
+    markup = "<p>UHID&nbsp;0024518 &amp; ICD E11.9</p>"
+    assert "&nbsp;" not in to_text(markup)
+    assert "&amp;" not in to_text(markup)
+    assert "0024518" in to_text(markup)

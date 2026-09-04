@@ -62,7 +62,7 @@ async def test_quarantine_accepts_status_all(api_client: AsyncClient) -> None:
 
     pending = await api_client.get("/api/v1/quarantine?status=pending", headers=headers)
     assert pending.status_code == 200
-    assert len(everything.json()) >= len(pending.json())
+    assert len(everything.json()["items"]) >= len(pending.json()["items"])
 
 
 async def test_quarantine_rejects_an_unknown_status(api_client: AsyncClient) -> None:

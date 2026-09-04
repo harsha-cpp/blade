@@ -140,16 +140,6 @@ def verify_refresh_secret(secret: str, token_hash: bytes) -> bool:
         return False
 
 
-def refresh_token_is_active(
-    *,
-    expires_at: datetime,
-    revoked_at: datetime | None,
-    now: datetime | None = None,
-) -> bool:
-    checked_at = now or datetime.now(UTC)
-    return revoked_at is None and expires_at > checked_at
-
-
 def _string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:
     return {key: value for key, value in payload.items() if isinstance(key, str)}
 

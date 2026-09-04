@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from blade_backend.access_requests.api import router as access_requests_router
 from blade_backend.audit.api import router as audit_router
 from blade_backend.auth.api import router as auth_router
 from blade_backend.auth.devices_api import router as devices_router
@@ -28,3 +29,6 @@ api_v1_router.include_router(public_router, prefix="/public", tags=["public"])
 api_v1_router.include_router(scan_router, prefix="/scan", tags=["scan"])
 api_v1_router.include_router(quarantine_router, prefix="/quarantine", tags=["quarantine"])
 api_v1_router.include_router(audit_router, prefix="/audit", tags=["audit"])
+api_v1_router.include_router(
+    access_requests_router, prefix="/access-requests", tags=["access-requests"]
+)

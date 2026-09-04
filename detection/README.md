@@ -46,7 +46,6 @@ Heavy OCR deps are optional:
 ```bash
 uv pip install -e .                   # core
 uv pip install -e ".[ocr]"            # + tesseract/paddle
-uv pip install -e ".[medical-ner]"    # + transformers context booster
 uv pip install -e ".[dev]"            # + test toolchain
 ```
 

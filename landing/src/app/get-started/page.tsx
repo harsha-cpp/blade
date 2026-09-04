@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import Footer from "@/components/Footer";
 import Nav from "@/components/Nav";
 import Button from "@/components/ui/Button";
+import PrimaryCta from "@/components/ui/PrimaryCta";
 import Reveal from "@/components/ui/Reveal";
 import { links } from "@/lib/links";
 
 export const metadata: Metadata = {
   title: "Get started with Blade",
   description:
-    "Create an organization, link the Chrome extension with your organization code, classify your domains, and send a test message through Blade.",
+    "Request access, link the Chrome extension with your organization code, classify your domains, and send a test message through Blade.",
 };
 
 type Step = {
@@ -16,15 +18,17 @@ type Step = {
   title: string;
   body: string;
   detail: string;
+  action?: { href: string; label: string };
 };
 
 const steps: Step[] = [
   {
     n: "01",
-    title: "Create your organization",
-    body: "The signup form takes an organization name, your work email, and a password of at least 12 characters. One call creates the organization and its owner, signs you in, and lands you on the onboarding page.",
+    title: "Request access for your organization",
+    body: "Signup is not open. Send a request from the request access form with your hospital name, your work email and your role, and the Blade team creates the organization and makes you its owner. If your hospital is already on Blade, an administrator invites you instead.",
     detail:
-      "Common passwords are rejected. If the email or the organization already exists, sign in instead.",
+      "The team replies within two working days and sets a password with you on the first call. Once the organization exists, sign in and you land on the onboarding page.",
+    action: { href: links.requestAccess, label: "Open the request access form" },
   },
   {
     n: "02",
@@ -68,8 +72,8 @@ const prerequisites: [string, string][] = [
     "Chrome 120 or newer, with developer mode available for loading an unpacked extension.",
   ],
   [
-    "Open signup",
-    "The API has to allow open signup for you to create the first organization yourself.",
+    "An approved organization",
+    "The Blade team creates the first organization from an access request, or an administrator invites you into one that already exists.",
   ],
 ];
 
@@ -111,9 +115,9 @@ export default function GetStarted() {
             className="flex max-w-[720px] flex-col"
           >
             <p className="body-24 whitespace-pre-wrap text-center text-sand">
-              Five steps. Create the organization, link one browser, tell Blade
-              who you are allowed to email, then watch a message be scanned
-              before it leaves.
+              Five steps. Request access, link one browser, tell Blade who you
+              are allowed to email, then watch a message be scanned before it
+              leaves.
             </p>
           </Reveal>
         </div>
@@ -126,14 +130,11 @@ export default function GetStarted() {
           ease="var(--ease-framer)"
           className="flex w-full flex-col items-center justify-center gap-4 tab:flex-row tab:gap-5"
         >
-          <Button
-            href={links.createAccount}
+          <PrimaryCta
             variant="primary"
             size="lg"
             className="w-full max-w-[326px]"
-          >
-            Create an account
-          </Button>
+          />
           <Button
             href={links.signIn}
             variant="outline"
@@ -194,6 +195,14 @@ export default function GetStarted() {
                   <p className="font-rsr text-[14px] leading-[22px] tracking-[-0.28px] text-stone lg:text-[16px] lg:leading-[26px] lg:tracking-[-0.32px]">
                     {step.detail}
                   </p>
+                  {step.action ? (
+                    <Link
+                      href={step.action.href}
+                      className="footlink-small font-rsm text-[16px] leading-[24px] tracking-[-0.32px] text-blue underline underline-offset-4"
+                    >
+                      {step.action.label}
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             </Reveal>
@@ -208,20 +217,17 @@ export default function GetStarted() {
               Start with one inbox
             </h2>
             <p className="body-24 max-w-[560px] whitespace-pre-wrap text-center text-sand">
-              The account and the code take a minute. Everything after that
-              happens in the browser, so nothing you send has to leave the
-              machine to be checked.
+              The request takes a minute and the code arrives with your
+              organization. Everything after that happens in the browser, so
+              nothing you send has to leave the machine to be checked.
             </p>
           </div>
           <div className="flex w-full flex-col items-center justify-center gap-4 tab:flex-row tab:gap-5">
-            <Button
-              href={links.createAccount}
+            <PrimaryCta
               variant="primary"
               size="lg"
               className="w-full max-w-[326px]"
-            >
-              Create an account
-            </Button>
+            />
             <Button
               href={links.signIn}
               variant="outline"

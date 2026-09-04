@@ -1,8 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { ApiError } from "../lib/api";
 import { errorMessage } from "../lib/errors";
+import { requestAccessTarget } from "../lib/landing";
+import { publicApi } from "../api/public";
 import type { MfaChallenge, OrgListItem } from "../api/auth";
 import AuthShell from "../components/AuthShell";
 import MfaChallengeForm from "../components/MfaChallengeForm";
@@ -26,6 +29,15 @@ export default function LoginRoute() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
+
+  const { data: signupStatus } = useQuery({
+    queryKey: ["signup-status"],
+    queryFn: () => publicApi.signupStatus(),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const openSignup = signupStatus?.open_signup === true;
+  const requestAccess = requestAccessTarget();
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -122,7 +134,13 @@ export default function LoginRoute() {
       <div className="auth-footer row between">
         <span>
           <span className="subtle">No account?</span>{" "}
-          <Link to="/signup">Create one</Link>
+          {openSignup ? (
+            <Link to="/signup">Create one</Link>
+          ) : requestAccess.external ? (
+            <a href={requestAccess.href}>Request access</a>
+          ) : (
+            <Link to={requestAccess.href}>Request access</Link>
+          )}
         </span>
         <Link to="/forgot-password">Forgot password?</Link>
       </div>

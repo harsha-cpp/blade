@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from abc import ABC, abstractmethod
 from importlib import import_module
 from pathlib import Path
@@ -121,7 +120,3 @@ def get_store() -> BlobStore:
 def reset_store() -> None:
     global _store  # noqa: PLW0603
     _store = None
-
-
-def purge_local_dir(path: Path) -> None:
-    shutil.rmtree(path, ignore_errors=True)

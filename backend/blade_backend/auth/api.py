@@ -4,9 +4,10 @@ import asyncio
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -68,6 +69,9 @@ router = APIRouter()
 _ORG_CODE_BYTES = 18
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _SWITCH_DENIED_DETAIL = "no verified active membership in that org"
+_CROSS_SITE_DETAIL = "cross-site cookie request refused"
+_RESET_TOKEN_DETAIL = "reset link is invalid or has expired"
+_VERIFY_TOKEN_DETAIL = "verification link is invalid or has expired"
 
 __all__ = ["AuthResponse", "MemberView", "OrganizationView", "router"]
 
@@ -109,6 +113,23 @@ async def _mfa_enabled(session: AsyncSession, member_id: UUID) -> bool:
         select(MemberMfa.confirmed_at).where(MemberMfa.member_id == member_id)
     )
     return confirmed is not None
+
+
+def _enforce_browser_origin(request: Request) -> None:
+    allowed = set(get_settings().cors_origins)
+    origin = request.headers.get("origin")
+    if origin is not None:
+        if origin not in allowed:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_CROSS_SITE_DETAIL)
+        return
+    referer = request.headers.get("referer")
+    if referer is None:
+        return
+    parsed = urlsplit(referer)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_CROSS_SITE_DETAIL)
+    if f"{parsed.scheme}://{parsed.netloc}" not in allowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_CROSS_SITE_DETAIL)
 
 
 def _enforce_password_policy(password: str, email: str) -> None:
@@ -212,12 +233,13 @@ async def login(
     email = str(payload.email).lower().strip()
     limit = await login_rate_limiter.check(request, email)
     if not limit.allowed:
-        await _audit_login_lockout(
-            session,
-            email=email,
-            org_slug=payload.org_slug,
-            retry_after_seconds=limit.retry_after_seconds,
-        )
+        if limit.audit_due:
+            await _audit_login_lockout(
+                session,
+                email=email,
+                org_slug=payload.org_slug,
+                retry_after_seconds=limit.retry_after_seconds,
+            )
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail="too many login attempts",
@@ -240,6 +262,7 @@ async def login(
             verified_members.append(candidate)
 
     if not verified_members:
+        await _audit_login(session, members=members, email=email, action="login_failed")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
     if payload.org_slug is None and len(verified_members) > 1:
         choices = await _org_choices(session, verified_members)
@@ -257,10 +280,24 @@ async def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="organization missing")
 
     if await _mfa_enabled(session, member.id):
+        await _audit_login(
+            session,
+            members=[member],
+            email=email,
+            action="login_mfa_challenged",
+        )
         return MfaChallengeResponse(
             challenge_token=issue_challenge_token(member.id, org.id),
             expires_in=CHALLENGE_TTL_SECONDS,
         )
+    await write_audit_event(
+        session,
+        org_id=org.id,
+        actor=f"member:{member.email}",
+        category="auth",
+        action="login_succeeded",
+        metadata={"member_id": str(member.id), "factor": "password"},
+    )
     return await issue_session(session, response, member, org, request=request)
 
 
@@ -271,8 +308,16 @@ async def refresh(response: Response, request: Request, session: DbSession) -> A
     The old token stays usable for ``refresh_rotation_grace_seconds`` so two
     dashboard tabs refreshing at once do not sign each other out. Presented
     after that window it can only have been copied, so the whole family - every
-    descendant of that login - is revoked.
+    descendant of that login - is revoked. Rotation is claimed with a
+    conditional `UPDATE ... WHERE rotated_at IS NULL`, so two tabs racing
+    cannot both mint a child and orphan one of them.
+
+    The cookie is the only credential here, so a browser that names an origin
+    or a referring page must name one of `CORS_ORIGINS`. Clients that send
+    neither header are not browsers and cannot be made to carry the cookie
+    from somebody else's page, so they are allowed through.
     """
+    _enforce_browser_origin(request)
     settings = get_settings()
     refresh_cookie = read_refresh_cookie(request, settings)
     if not refresh_cookie:
@@ -321,9 +366,10 @@ async def refresh(response: Response, request: Request, session: DbSession) -> A
 
     mfa_enabled = await _mfa_enabled(session, member.id)
     access_token = issue_access_token(str(member.id), str(org.id), member.role)
+    rotation_won = record.rotated_at is None and await _claim_rotation(session, record, now)
     record.last_used_at = now
 
-    if record.rotated_at is None:
+    if rotation_won:
         issued = await asyncio.to_thread(
             issue_refresh_token, ttl_days=settings.jwt_refresh_ttl_days
         )
@@ -355,6 +401,12 @@ async def refresh(response: Response, request: Request, session: DbSession) -> A
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(response: Response, request: Request, session: DbSession) -> Response:
+    """Revoke the refresh family the cookie belongs to and clear the cookie.
+
+    Origin-checked like `POST /auth/refresh`: the cookie is the only
+    credential, so another site must not be able to sign the caller out.
+    """
+    _enforce_browser_origin(request)
     settings = get_settings()
     refresh_cookie = read_refresh_cookie(request, settings)
     if refresh_cookie:
@@ -507,27 +559,55 @@ async def switch_org(
 async def forgot_password(
     payload: ForgotPasswordRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     session: DbSession,
 ) -> Response:
     """Mail a single-use reset link.
 
     Always 204, whatever the address. Any difference in status, body or timing
     between a known and an unknown address turns this into a directory of who
-    works at the hospital.
+    works at the hospital, so the token is minted before the lookup and the
+    delivery is handed to a background task: both branches do the same work
+    inside the request and neither waits on SMTP.
     """
     email = str(payload.email).lower().strip()
     limit = await login_rate_limiter.check(request, f"forgot:{email}")
-    if limit.allowed:
-        member = await session.scalar(
-            select(OrgMember)
-            .where(OrgMember.email == email, OrgMember.status == "active")
-            .order_by(OrgMember.created_at.asc())
-            .limit(1)
+    if not limit.allowed:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    settings = get_settings()
+    issued = await asyncio.to_thread(
+        issue_token,
+        PASSWORD_RESET_PREFIX,
+        ttl=timedelta(seconds=settings.password_reset_ttl_seconds),
+    )
+    member = await session.scalar(
+        select(OrgMember)
+        .where(OrgMember.email == email, OrgMember.status == "active")
+        .order_by(OrgMember.created_at.asc())
+        .limit(1)
+    )
+    if member is not None:
+        session.add(
+            PasswordResetToken(
+                id=issued.id,
+                member_id=member.id,
+                token_hash=issued.token_hash,
+                expires_at=issued.expires_at,
+            )
         )
-        if member is not None:
-            await _send_password_reset_email(session, member)
-            await session.commit()
+        await session.commit()
+        subject, body = password_reset_email(
+            base_url=settings.app_base_url,
+            token=issued.raw_token,
+            ttl_seconds=settings.password_reset_ttl_seconds,
+        )
+        background_tasks.add_task(deliver_quietly, to=member.email, subject=subject, body=body)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def deliver_quietly(*, to: str, subject: str, body: str) -> None:
+    await send_quietly(get_mailer(), to=to, subject=subject, body=body)
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -536,22 +616,22 @@ async def reset_password(payload: ResetPasswordRequest, session: DbSession) -> R
     try:
         token_id, secret = parse_token(PASSWORD_RESET_PREFIX, payload.token.strip())
     except TokenFormatError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid reset token") from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_RESET_TOKEN_DETAIL) from exc
 
     record = await session.get(PasswordResetToken, token_id)
     if record is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid reset token")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_RESET_TOKEN_DETAIL)
     secret_ok = await asyncio.to_thread(verify_token_secret, secret, record.token_hash)
     if not secret_ok:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid reset token")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_RESET_TOKEN_DETAIL)
     if record.used_at is not None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="reset token already used")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_RESET_TOKEN_DETAIL)
     if record.expires_at <= now:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="reset token expired")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_RESET_TOKEN_DETAIL)
 
     member = await session.get(OrgMember, record.member_id)
     if member is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid reset token")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_RESET_TOKEN_DETAIL)
     _enforce_password_policy(payload.password, member.email)
 
     password_hash = await asyncio.to_thread(hash_password, payload.password)
@@ -597,24 +677,22 @@ async def verify_email(payload: VerifyEmailRequest, session: DbSession) -> Respo
     try:
         token_id, secret = parse_token(EMAIL_VERIFY_PREFIX, payload.token.strip())
     except TokenFormatError as exc:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, detail="invalid verification token"
-        ) from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_VERIFY_TOKEN_DETAIL) from exc
 
     record = await session.get(EmailVerificationToken, token_id)
     if record is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid verification token")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_VERIFY_TOKEN_DETAIL)
     secret_ok = await asyncio.to_thread(verify_token_secret, secret, record.token_hash)
     if not secret_ok:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid verification token")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_VERIFY_TOKEN_DETAIL)
     if record.used_at is not None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="verification token already used")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_VERIFY_TOKEN_DETAIL)
     if record.expires_at <= now:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="verification token expired")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_VERIFY_TOKEN_DETAIL)
 
     member = await session.get(OrgMember, record.member_id)
     if member is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid verification token")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=_VERIFY_TOKEN_DETAIL)
 
     record.used_at = now
     if member.email_verified_at is None:
@@ -734,8 +812,24 @@ async def _audit_login_lockout(
     org_slug: str | None,
     retry_after_seconds: int,
 ) -> None:
-    members = await _login_members(session, email, org_slug)
-    seen_orgs: set[object] = set()
+    await _audit_login(
+        session,
+        members=await _login_members(session, email, org_slug),
+        email=email,
+        action="login_rate_limited",
+        metadata={"retry_after_seconds": retry_after_seconds},
+    )
+
+
+async def _audit_login(
+    session: AsyncSession,
+    *,
+    members: list[OrgMember],
+    email: str,
+    action: str,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    seen_orgs: set[UUID] = set()
     for member in members:
         if member.org_id in seen_orgs:
             continue
@@ -745,11 +839,22 @@ async def _audit_login_lockout(
             org_id=member.org_id,
             actor=f"login:{email}",
             category="auth",
-            action="login_rate_limited",
-            metadata={"email": email, "retry_after_seconds": retry_after_seconds},
+            action=action,
+            metadata={"email": email, **(metadata or {})},
         )
     if seen_orgs:
         await session.commit()
+
+
+async def _claim_rotation(session: AsyncSession, record: RefreshToken, now: datetime) -> bool:
+    claimed = await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.id == record.id, RefreshToken.rotated_at.is_(None))
+        .values(rotated_at=now)
+        .returning(RefreshToken.id)
+        .execution_options(synchronize_session=False)
+    )
+    return claimed.scalar_one_or_none() is not None
 
 
 async def _revoke_family(session: AsyncSession, record: RefreshToken, now: datetime) -> None:
@@ -758,29 +863,6 @@ async def _revoke_family(session: AsyncSession, record: RefreshToken, now: datet
         .where(RefreshToken.family_id == record.family_id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=now)
     )
-
-
-async def _send_password_reset_email(session: AsyncSession, member: OrgMember) -> None:
-    settings = get_settings()
-    issued = await asyncio.to_thread(
-        issue_token,
-        PASSWORD_RESET_PREFIX,
-        ttl=timedelta(seconds=settings.password_reset_ttl_seconds),
-    )
-    session.add(
-        PasswordResetToken(
-            id=issued.id,
-            member_id=member.id,
-            token_hash=issued.token_hash,
-            expires_at=issued.expires_at,
-        )
-    )
-    subject, body = password_reset_email(
-        base_url=settings.app_base_url,
-        token=issued.raw_token,
-        ttl_seconds=settings.password_reset_ttl_seconds,
-    )
-    await send_quietly(get_mailer(), to=member.email, subject=subject, body=body)
 
 
 async def _send_verification_email(session: AsyncSession, member: OrgMember) -> None:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any, Final
 
+from blade_detection.recognition.reference_data import IFSC_BANK_CODES
+from blade_detection.recognition.validators import icd10_categories
 from blade_detection.rules.pack import BUILTIN_RULE_PACK
 from blade_detection.rules.schema import Rule, RulePack
 from blade_detection.scoring.weights import (
@@ -89,20 +91,13 @@ def rule_to_dict(rule: Rule) -> dict[str, Any]:
     }
 
 
-def icd10_categories() -> list[str]:
-    import simple_icd_10_cm as icd
-
-    return sorted(
-        code for code in icd.get_all_codes(with_dots=False) if len(code) == 3 and code[0].isalpha()
-    )
-
-
 def export_pack(pack: RulePack | None = None) -> dict[str, Any]:
     resolved = pack or BUILTIN_RULE_PACK
     return {
         "version": resolved.version,
         "rules": [rule_to_dict(rule) for rule in resolved.rules],
-        "icd10Categories": icd10_categories(),
+        "icd10Categories": sorted(icd10_categories()),
+        "ifscBankCodes": sorted(IFSC_BANK_CODES),
         "scoring": {
             "weights": SENSITIVITY_WEIGHTS,
             "riskCurveK": RISK_CURVE_K,

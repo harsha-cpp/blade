@@ -40,7 +40,7 @@ worker-dev: ## Run the Celery worker (queued attachment scans)
 	cd backend && $(UV) run celery -A blade_backend.tasks.celery_app worker \
 		--loglevel=info --concurrency=2
 
-beat-dev: ## Run Celery beat (no periodic tasks are scheduled yet)
+beat-dev: ## Run Celery beat (schedules the daily expired-credential purge)
 	cd backend && $(UV) run celery -A blade_backend.tasks.celery_app beat --loglevel=info
 
 dashboard-dev: ## Run admin dashboard

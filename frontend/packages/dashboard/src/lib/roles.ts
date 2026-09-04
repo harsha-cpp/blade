@@ -12,6 +12,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export type Capability =
   | "viewAnalytics"
   | "viewAudit"
+  | "verifyAuditChain"
   | "viewMembers"
   | "manageMembers"
   | "viewDomains"
@@ -35,6 +36,7 @@ const EVERYONE: readonly Role[] = ROLES;
 const CAPABILITY_ROLES: Record<Capability, readonly Role[]> = {
   viewAnalytics: EVERYONE,
   viewAudit: EVERYONE,
+  verifyAuditChain: OWNER_ADMIN,
   viewMembers: EVERYONE,
   manageMembers: OWNER_ADMIN,
   viewDomains: EVERYONE,
@@ -64,11 +66,12 @@ export function isRole(value: string | null | undefined): value is Role {
   return ROLES.includes(value as Role);
 }
 
-export type NavGroup = "Monitor" | "Configure" | "Account";
+export type NavGroup = "Monitor" | "Configure" | "Platform" | "Account";
 
 export const NAV_GROUPS: readonly NavGroup[] = [
   "Monitor",
   "Configure",
+  "Platform",
   "Account",
 ];
 
@@ -77,7 +80,12 @@ export interface NavEntry {
   label: string;
   group: NavGroup;
   capability?: Capability;
+  platform?: boolean;
   end?: boolean;
+}
+
+export interface NavOptions {
+  platform?: boolean;
 }
 
 export const NAV_ENTRIES: readonly NavEntry[] = [
@@ -104,7 +112,7 @@ export const NAV_ENTRIES: readonly NavEntry[] = [
     to: "/policy",
     label: "Policy",
     group: "Configure",
-    capability: "editPolicy",
+    capability: "viewPolicy",
   },
   {
     to: "/domains",
@@ -116,27 +124,38 @@ export const NAV_ENTRIES: readonly NavEntry[] = [
     to: "/devices",
     label: "Devices",
     group: "Configure",
-    capability: "revokeDevice",
+    capability: "viewDevices",
   },
   {
     to: "/members",
     label: "Members",
     group: "Configure",
-    capability: "manageMembers",
+    capability: "viewMembers",
+  },
+  {
+    to: "/access-requests",
+    label: "Access requests",
+    group: "Platform",
+    platform: true,
   },
   { to: "/settings", label: "Settings", group: "Account" },
 ];
 
-export function navFor(role: Role | null | undefined): NavEntry[] {
-  return NAV_ENTRIES.filter(
-    (entry) => entry.capability === undefined || can(role, entry.capability),
-  );
+export function navFor(
+  role: Role | null | undefined,
+  options: NavOptions = {},
+): NavEntry[] {
+  return NAV_ENTRIES.filter((entry) => {
+    if (entry.platform && !options.platform) return false;
+    return entry.capability === undefined || can(role, entry.capability);
+  });
 }
 
 export function navGroupsFor(
   role: Role | null | undefined,
+  options: NavOptions = {},
 ): Array<{ group: NavGroup; entries: NavEntry[] }> {
-  const visible = navFor(role);
+  const visible = navFor(role, options);
   return NAV_GROUPS.map((group) => ({
     group,
     entries: visible.filter((e) => e.group === group),

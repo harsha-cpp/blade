@@ -1,5 +1,5 @@
-import type { EntityHit, Severity, Verdict } from "@bladedlp/shared";
-import { scorePhi } from "./phi";
+import type { Severity, Verdict } from "@bladedlp/shared";
+import { scorePhi, type PhiHit } from "./phi";
 
 export interface OrgPolicy {
   approvedDomains: Set<string>;
@@ -83,15 +83,15 @@ export function classifyRecipients(
 }
 
 export interface LocalVerdictInput {
-  entities: EntityHit[];
+  entities: PhiHit[];
   recipients: string[];
   policy: OrgPolicy;
   unscannedAttachments?: number;
 }
 
 const NO_CONFIG_MESSAGE =
-  "Blade has no policy configuration for this account, so the recipients could not be checked. " +
-  "Connect the extension to your organization (or reconnect if the dashboard is unreachable) before sending sensitive data.";
+  "This install is not linked to an organization, or its configuration could not be loaded, " +
+  "so the recipients could not be checked. Contact IT to link this install before sending patient data.";
 const NO_ALLOWLIST_MESSAGE =
   "This organization has no approved recipient domains configured, so the recipients could not be checked. " +
   "Ask your administrator to add the approved domains before sending sensitive data.";
@@ -154,7 +154,7 @@ export function buildLocalVerdict(input: LocalVerdictInput): Verdict {
     }
 
     return verdict({
-      action: "warn",
+      action: readiness === "no-config" ? "block" : "warn",
       severity: scored.severity,
       risk: scored.risk,
       policyIds: [
@@ -260,7 +260,7 @@ function verdict(input: {
   severity: Severity;
   risk: number;
   policyIds: string[];
-  entities: EntityHit[];
+  entities: PhiHit[];
   message: string;
 }): Verdict {
   return {

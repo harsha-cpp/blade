@@ -20,7 +20,7 @@ export default function Roi() {
         <div className="flex w-full flex-col items-start justify-center gap-12 pt-10 lg:w-[660px] lg:shrink-0 lg:gap-24 lg:pt-[102px]">
           <div className="flex w-full flex-col items-center justify-center gap-20 overflow-clip">
             <div className="flex w-full flex-col items-start justify-center gap-8">
-              <p className="eyebrow text-blue">measured accuracy</p>
+              <p className="eyebrow text-blue">Measured accuracy</p>
               <h3 className="display-140 whitespace-pre-wrap text-cream">
                 Measured, not asserted
               </h3>
@@ -48,7 +48,7 @@ export default function Roi() {
           <div className="flex w-full flex-col items-start justify-center gap-[30px]">
             <div className="flex flex-col items-start gap-[11px]">
               <h2 className="pixel-100 -ml-[2px] text-stone">119</h2>
-              <p className="eyebrow text-stone">documents</p>
+              <p className="eyebrow text-stone">Documents</p>
             </div>
             <Bars width={673} height={50} stroke={1} gap={10} color="#faf9f5" />
           </div>
@@ -67,7 +67,7 @@ export default function Roi() {
           </div>
           <div className="relative z-[2] flex flex-col items-end gap-[11px]">
             <h2 className="pixel-100 text-blue">175</h2>
-            <p className="eyebrow text-blue">labelled spans</p>
+            <p className="eyebrow text-blue">Labelled spans</p>
           </div>
           <div
             id="wpqs9h"
@@ -85,7 +85,7 @@ export default function Roi() {
                 100%
               </div>
               <div className="flex flex-col items-start justify-start pr-9">
-                <div className="no-ft whitespace-pre-line font-sysmono text-[13px] font-semibold uppercase leading-[15.6px] tracking-[-0.39px] text-ink">
+                <div className="no-ft whitespace-pre-line font-sysmono text-[13px] font-semibold leading-[15.6px] tracking-[-0.39px] text-ink">
                   {"Precision\non 175 spans"}
                 </div>
               </div>

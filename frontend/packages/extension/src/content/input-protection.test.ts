@@ -17,6 +17,11 @@ function pasteEvent(text: string): ClipboardEvent {
   return event;
 }
 
+function trusted<T extends Event>(event: T): T {
+  Object.defineProperty(event, "isTrusted", { value: true });
+  return event;
+}
+
 const AADHAAR = "7534 7930 7460";
 
 describe("universal input protection", () => {
@@ -206,6 +211,87 @@ describe("universal input protection", () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(notify).toHaveBeenCalledOnce();
+    dispose();
+  });
+
+  it("blocks a page dispatched insertion but never reports it", () => {
+    const input = document.createElement("textarea");
+    document.body.append(input);
+    const notify = vi.fn();
+    const onBlocked = vi.fn();
+    const dispose = installInputProtection({ document, notify, onBlocked });
+    const event = new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      data: `Aadhaar ${AADHAAR}`,
+      inputType: "insertText",
+    });
+
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(input.value).toBe("");
+    expect(notify).toHaveBeenCalledWith(expect.anything(), false);
+    expect(onBlocked).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it("reports a block that a trusted browser event caused", () => {
+    const input = document.createElement("textarea");
+    document.body.append(input);
+    const notify = vi.fn();
+    const onBlocked = vi.fn();
+    const dispose = installInputProtection({ document, notify, onBlocked });
+    const event = trusted(
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        data: `Aadhaar ${AADHAAR}`,
+        inputType: "insertText",
+      }),
+    );
+
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(notify).toHaveBeenCalledWith(expect.anything(), true);
+    expect(onBlocked).toHaveBeenCalledOnce();
+    dispose();
+  });
+
+  it.each([
+    [
+      "a page dispatched paste",
+      () => pasteEvent(`Patient Aadhaar ${AADHAAR}`),
+      false,
+    ],
+    [
+      "a page dispatched input",
+      () => new Event("input", { bubbles: true, cancelable: true }),
+      false,
+    ],
+    [
+      "a real paste",
+      () => trusted(pasteEvent(`Patient Aadhaar ${AADHAAR}`)),
+      true,
+    ],
+    [
+      "autofill",
+      () => trusted(new Event("input", { bubbles: true, cancelable: true })),
+      true,
+    ],
+  ])("reports %s only when it is trusted", (_label, build, reported) => {
+    const input = document.createElement("textarea");
+    document.body.append(input);
+    const onBlocked = vi.fn();
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify, onBlocked });
+    input.value = `Patient Aadhaar ${AADHAAR}`;
+
+    input.dispatchEvent(build());
+
+    expect(notify).toHaveBeenCalledOnce();
+    expect(onBlocked).toHaveBeenCalledTimes(reported ? 1 : 0);
     dispose();
   });
 

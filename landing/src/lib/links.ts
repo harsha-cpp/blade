@@ -12,6 +12,7 @@ export const links = {
   signIn: `${APP_URL}/login`,
   createAccount: `${APP_URL}/signup`,
   getStarted: "/get-started",
+  requestAccess: "/request-access",
 } as const;
 
 export default links;

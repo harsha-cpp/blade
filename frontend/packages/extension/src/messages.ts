@@ -85,6 +85,7 @@ export type BackendResult =
       kind: BackendFailureKind;
       status?: number | undefined;
       detail?: string | undefined;
+      retryAfterMs?: number | undefined;
     };
 
 export function parseBackendRequest(message: unknown): BackendRequest | null {

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { membersApi, type OrgMember } from "../api/members";
 import { ROLES, ROLE_DESCRIPTIONS, type Role } from "../lib/roles";
@@ -27,7 +27,10 @@ export default function MembersRoute() {
   });
   const remove = useMutation({
     mutationFn: membersApi.remove,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["members"] }),
+    onSuccess: () => {
+      setConfirmRemove(null);
+      return qc.invalidateQueries({ queryKey: ["members"] });
+    },
   });
 
   const [email, setEmail] = useState("");
@@ -39,6 +42,16 @@ export default function MembersRoute() {
     emailSent: boolean;
   } | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<OrgMember | null>(null);
+
+  useEffect(() => {
+    if (!confirmRemove) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setConfirmRemove(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [confirmRemove]);
 
   async function onInvite(e: FormEvent) {
     e.preventDefault();
@@ -213,8 +226,12 @@ export default function MembersRoute() {
                     member={m}
                     isSelf={me?.id === m.id}
                     canManage={canManage}
+                    canGrantOwner={me?.role === "owner"}
                     onRole={(r) => mutateRole(m.id, r)}
-                    onRemove={() => removeMember(m.id)}
+                    onRemove={() => {
+                      setRowError(null);
+                      setConfirmRemove(m);
+                    }}
                     busy={updateRole.isPending || remove.isPending}
                   />
                 ))}
@@ -223,6 +240,52 @@ export default function MembersRoute() {
           </div>
         )}
       </div>
+
+      {confirmRemove ? (
+        <div className="dialog-scrim" role="presentation">
+          <div
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-member-title"
+          >
+            <h2 className="h2" id="remove-member-title">
+              Remove this member?
+            </h2>
+            <p className="muted">
+              <strong>{confirmRemove.email}</strong> loses access to this
+              dashboard straight away, and any invite they have not accepted
+              stops working. What they already did stays in the audit log.
+            </p>
+            {rowError && (
+              <div className="error" style={{ marginTop: 12 }}>
+                {rowError}
+              </div>
+            )}
+            <div
+              className="row gap-2"
+              style={{ marginTop: 18, justifyContent: "flex-end" }}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setConfirmRemove(null)}
+                disabled={remove.isPending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => removeMember(confirmRemove.id)}
+                disabled={remove.isPending}
+              >
+                {remove.isPending ? "Removing..." : "Remove member"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -231,6 +294,7 @@ function MemberRow({
   member,
   isSelf,
   canManage,
+  canGrantOwner,
   onRole,
   onRemove,
   busy,
@@ -238,10 +302,15 @@ function MemberRow({
   member: OrgMember;
   isSelf: boolean;
   canManage: boolean;
+  canGrantOwner: boolean;
   onRole: (r: Role) => void;
   onRemove: () => void;
   busy: boolean;
 }) {
+  const roleOptions = ROLES.filter(
+    (r) => r !== "owner" || canGrantOwner || member.role === "owner",
+  );
+
   return (
     <tr>
       <td>
@@ -263,7 +332,7 @@ function MemberRow({
             disabled={busy}
             style={{ width: 120 }}
           >
-            {ROLES.map((r) => (
+            {roleOptions.map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>

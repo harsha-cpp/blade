@@ -3,6 +3,8 @@ import type { Severity } from "../lib/risk";
 
 export type QuarantineStatus = "pending" | "approved" | "rejected";
 
+export type QuarantineStatusFilter = QuarantineStatus | "all";
+
 export interface QuarantineEntity {
   type?: string;
   masked_value?: string;
@@ -38,29 +40,28 @@ export interface QuarantineItem {
   updated_at: string;
 }
 
-export const QUARANTINE_STATUSES: readonly QuarantineStatus[] = [
-  "pending",
-  "approved",
-  "rejected",
-];
+export const QUARANTINE_PAGE_LIMIT = 50;
+
+export interface QuarantinePage {
+  items: QuarantineItem[];
+  next_cursor: string | null;
+}
+
+export interface QuarantineQuery {
+  status?: QuarantineStatusFilter | undefined;
+  limit?: number | undefined;
+  cursor?: string | undefined;
+}
 
 export const quarantineApi = {
-  list: (status: QuarantineStatus | "all" = "pending", limit = 100) => {
-    if (status === "all") {
-      return Promise.all(
-        QUARANTINE_STATUSES.map((s) =>
-          request<QuarantineItem[]>("/api/v1/quarantine", {
-            query: { status: s, limit },
-          }),
-        ),
-      ).then((groups) =>
-        groups.flat().sort((a, b) => b.created_at.localeCompare(a.created_at)),
-      );
-    }
-    return request<QuarantineItem[]>("/api/v1/quarantine", {
-      query: { status, limit },
-    });
-  },
+  list: (query: QuarantineQuery = {}) =>
+    request<QuarantinePage>("/api/v1/quarantine", {
+      query: {
+        status: query.status ?? "pending",
+        limit: query.limit ?? QUARANTINE_PAGE_LIMIT,
+        cursor: query.cursor || undefined,
+      },
+    }),
   get: (id: string) => request<QuarantineItem>(`/api/v1/quarantine/${id}`),
   approve: (id: string, note?: string) =>
     request<QuarantineItem>(`/api/v1/quarantine/${id}/approve`, {

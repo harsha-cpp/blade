@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   policyApi,
   CLASS_LABELS,
@@ -30,13 +30,17 @@ interface Outcome {
 
 const EMPTY: Outcome = { result: null, error: null, loading: false };
 
+const SIMULATE_DEBOUNCE_MS = 400;
+
 export default function Simulator({
   draft,
+  saved: savedRules,
   version,
   dirty,
   onDraftMatches,
 }: {
   draft: PolicyRule[];
+  saved: PolicyRule[];
   version: string;
   dirty: boolean;
   onDraftMatches: (ids: string[]) => void;
@@ -55,6 +59,7 @@ export default function Simulator({
 
   const [saved, setSaved] = useState<Outcome>(EMPTY);
   const [candidate, setCandidate] = useState<Outcome>(EMPTY);
+  const entityLabelId = useId();
 
   const derivedSeverity = severityOf(risk);
   const severity: Severity =
@@ -80,13 +85,13 @@ export default function Simulator({
   );
 
   const draftKey = useMemo(() => JSON.stringify(draft), [draft]);
+  const savedKey = useMemo(() => JSON.stringify(savedRules), [savedRules]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
   useEffect(() => {
     let cancelled = false;
     setSaved((s) => ({ ...s, loading: true }));
-    setCandidate((s) => ({ ...s, loading: true }));
 
     const timer = setTimeout(() => {
       void (async () => {
@@ -105,6 +110,21 @@ export default function Simulator({
               loading: false,
             });
         }
+      })();
+    }, SIMULATE_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [scenario, savedKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCandidate((s) => ({ ...s, loading: true }));
+
+    const timer = setTimeout(() => {
+      void (async () => {
         try {
           const res = await policyApi.simulate({
             ...scenario,
@@ -125,7 +145,7 @@ export default function Simulator({
           }
         }
       })();
-    }, 400);
+    }, SIMULATE_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
@@ -223,8 +243,10 @@ export default function Simulator({
           Message has attachments
         </label>
 
-        <div className="field">
-          <span className="label">Detected entity types</span>
+        <div className="field" role="group" aria-labelledby={entityLabelId}>
+          <span className="label" id={entityLabelId}>
+            Detected entity types
+          </span>
           {ENTITY_GROUPS.map((group) => (
             <div key={group} style={{ marginTop: 6 }}>
               <span className="subtle">{group}</span>

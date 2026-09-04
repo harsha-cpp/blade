@@ -45,3 +45,33 @@ describe("sender identity", () => {
     expect(extractUserEmail(document)).toBe("a.rao@hospital.org");
   });
 });
+
+describe("where the sender identity may be read from", () => {
+  it("ignores an avatar or label elsewhere on the page", () => {
+    document.title = "Gmail";
+    document.body.innerHTML =
+      '<div class="message-list"><img alt="patient.family@gmail.com" />' +
+      '<span aria-label="From patient.family@gmail.com"></span></div>';
+
+    expect(extractUserEmail(document)).toBeUndefined();
+  });
+
+  it("reads the avatar inside the account switcher", () => {
+    document.title = "Gmail";
+    document.body.innerHTML =
+      '<a href="https://accounts.google.com/SignOutOptions">' +
+      '<img alt="Profile picture of a.rao@hospital.org" /></a>';
+
+    expect(extractUserEmail(document)).toBe("a.rao@hospital.org");
+  });
+
+  it("reads the address shown on the compose From row", () => {
+    document.title = "Gmail";
+    const compose = document.createElement("div");
+    compose.innerHTML =
+      '<div aria-label="From"><span aria-label="oncology@hospital.org"></span></div>';
+    document.body.appendChild(compose);
+
+    expect(extractUserEmail(document, compose)).toBe("oncology@hospital.org");
+  });
+});

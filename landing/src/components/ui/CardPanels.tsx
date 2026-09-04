@@ -27,7 +27,7 @@ const shell =
   "h-full w-full overflow-hidden rounded-[10px] border border-white/10 bg-ink-2 p-4";
 const head =
   "flex items-center justify-between border-b border-white/10 pb-3 text-[12px] text-cream";
-const label = "font-sysmono text-[10px] uppercase tracking-[0.06em] text-stone";
+const label = "font-sysmono text-[10px] tracking-[0.06em] text-stone";
 
 function step(on: boolean, i: number) {
   return {
@@ -49,7 +49,7 @@ export function DetectionPanel() {
     <div ref={ref} className={shell}>
       <div className={head}>
         <span>Discharge summary</span>
-        <span className="font-sysmono text-[10px] text-blue">SCANNING</span>
+        <span className="font-sysmono text-[10px] text-blue">Scanning</span>
       </div>
       <div className="mt-3 flex flex-col gap-[7px]">
         {hits.map(([type, value], i) => (
@@ -80,7 +80,7 @@ export function AttachmentPanel() {
     <div ref={ref} className={shell}>
       <div className={head}>
         <span>4 attachments</span>
-        <span className="font-sysmono text-[10px] text-stone">OCR ON</span>
+        <span className="font-sysmono text-[10px] text-stone">OCR on</span>
       </div>
       <div className="mt-3 flex flex-col gap-[11px]">
         {files.map(([name, pct], i) => (
@@ -119,7 +119,7 @@ export function PolicyPanel() {
     <div ref={ref} className={shell}>
       <div className={head}>
         <span>Policy</span>
-        <span className="font-sysmono text-[10px] text-stone">FIRST MATCH</span>
+        <span className="font-sysmono text-[10px] text-stone">First match</span>
       </div>
       <div className="mt-3 flex flex-col gap-[7px]">
         {rules.map(([n, id, hit], i) => (
@@ -139,13 +139,13 @@ export function PolicyPanel() {
             </span>
             {hit && (
               <span
-                className="font-sysmono text-[9px] uppercase text-blue"
+                className="font-sysmono text-[9px] text-blue"
                 style={{
                   opacity: on ? 1 : 0,
                   transition: "opacity .4s var(--ease-expo) 1.4s",
                 }}
               >
-                quarantine
+                Quarantine
               </span>
             )}
           </div>
@@ -162,7 +162,7 @@ export function AuditPanel() {
     <div ref={ref} className={shell}>
       <div className={head}>
         <span>Audit log</span>
-        <span className="font-sysmono text-[10px] text-stone">APPEND ONLY</span>
+        <span className="font-sysmono text-[10px] text-stone">Append only</span>
       </div>
       <div className="relative mt-3 flex flex-col gap-[10px]">
         <span
@@ -181,8 +181,8 @@ export function AuditPanel() {
           >
             <span className="absolute left-0 top-1/2 block h-[9px] w-[9px] -translate-y-1/2 rounded-full border border-blue bg-ink-2" />
             <span className="font-sysmono text-[10px] text-cream">{h}</span>
-            <span className="ml-auto font-sysmono text-[9px] uppercase text-stone">
-              linked
+            <span className="ml-auto font-sysmono text-[9px] text-stone">
+              Linked
             </span>
           </div>
         ))}

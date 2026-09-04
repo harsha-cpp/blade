@@ -1,7 +1,7 @@
 [project]
 name = "blade-detection"
 version = "0.1.0"
-description = "Blade DLP detection engine: Presidio + custom recognizers + OCR + risk scoring."
+description = "Blade DLP detection engine: Indian healthcare rule pack + spaCy NER + OCR + risk scoring."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
@@ -10,7 +10,6 @@ authors = [{ name = "Blade DLP" }]
 dependencies = [
     "pydantic>=2.9.0",
     "spacy>=3.7.6",
-    "python-stdnum>=1.20",
     "simple-icd-10-cm>=1.5.0,<2.0.0",
     "pymupdf>=1.24.10",
     "python-docx>=1.1.2",
@@ -21,7 +20,6 @@ dependencies = [
     "chardet>=5.2.0",
     "Pillow>=11.0.0",
     "python-magic>=0.4.27",
-    "regex>=2024.9.11",
     "structlog>=24.4.0",
     # Kept out of the optional `ocr` extra deliberately: without it, OCR
     # returns "" and scanned documents pass clean.
@@ -38,16 +36,11 @@ ocr = [
     "paddleocr>=2.8.1",
     "opencv-python-headless>=4.10.0",
 ]
-medical-ner = [
-    "transformers>=4.45.0",
-    "torch>=2.4.1",
-]
 dev = [
     "ruff>=0.7.0",
     "pyright>=1.1.385",
     "pytest>=8.3.3",
     "pytest-cov>=5.0.0",
-    "hypothesis>=6.115.0",
     "pip-audit>=2.7.3",
 ]
 

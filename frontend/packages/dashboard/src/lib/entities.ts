@@ -78,6 +78,18 @@ export function entityLabel(type: string | null | undefined): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+const FULLY_MASKED = /^\*+$/;
+
+export function entitySummary(
+  type: string | null | undefined,
+  maskedValue?: string | null,
+): string {
+  const label = entityLabel(type);
+  const masked = maskedValue?.trim() ?? "";
+  if (!masked || FULLY_MASKED.test(masked)) return label;
+  return `${label}: ${masked}`;
+}
+
 export function entityGroup(type: string): EntityGroup | null {
   return isKnown(type) ? ENTITY_META[type].group : null;
 }

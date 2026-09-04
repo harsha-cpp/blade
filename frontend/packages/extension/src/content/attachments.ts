@@ -1,5 +1,4 @@
-import { detectPhi } from "./phi";
-import type { EntityHit } from "@bladedlp/shared";
+import { detectPhi, type PhiHit } from "./phi";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let pdfLib: typeof import("pdfjs-dist") | null = null;
@@ -39,13 +38,13 @@ async function extractPdf(file: File): Promise<string> {
 
 export interface AttachmentScanResult {
   filename: string;
-  entities: EntityHit[];
+  entities: PhiHit[];
   unscanned: boolean;
   error?: string;
 }
 
 export interface AttachmentSweep {
-  entities: EntityHit[];
+  entities: PhiHit[];
   unscanned: number;
 }
 
@@ -84,7 +83,11 @@ export async function scanAttachment(
       : [];
     return { filename: file.name, entities, unscanned: !extraction.complete };
   } catch (err) {
-    console.error(`[Blade] Attachment scan FAILED for ${file.name}:`, err);
+    console.error(
+      "[Blade] attachment scan failed",
+      { nameLength: file.name.length, bytes: file.size },
+      err,
+    );
     return {
       filename: file.name,
       entities: [],

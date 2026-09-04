@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Button from "./ui/Button";
-import { links } from "@/lib/links";
+import PrimaryCta from "./ui/PrimaryCta";
 import { CARD_PANELS } from "./ui/CardPanels";
 
 const cards = [
@@ -100,7 +99,7 @@ function FeatureGrid() {
               >
                 {c.number}
               </div>
-              <div className="font-sysmono text-[16px] uppercase leading-[1.1] tracking-[0.03em] text-blue">
+              <div className="font-sysmono text-[16px] leading-[1.1] tracking-[0.03em] text-blue">
                 {c.eyebrow}
               </div>
               <div className="max-w-[360px] font-rsm text-[32px] leading-[1.2] tracking-[-0.03em] text-cream">
@@ -149,14 +148,11 @@ export default function Features() {
             <br />
             0.9826 entity F1, 0 false alarms on clean mail
           </p>
-          <Button
-            href={links.createAccount}
+          <PrimaryCta
             variant="bare"
             size="lg"
             className="w-[400px] max-w-full shrink-0"
-          >
-            Get started
-          </Button>
+          />
         </div>
       </div>
     </section>

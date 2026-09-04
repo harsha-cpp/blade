@@ -1,5 +1,6 @@
 import LogoHeading from "./LogoHeading";
 import Button from "./ui/Button";
+import PrimaryCta from "./ui/PrimaryCta";
 import Reveal from "./ui/Reveal";
 import { links } from "@/lib/links";
 
@@ -36,14 +37,11 @@ export default function Hero() {
         ease="var(--ease-framer)"
         className="flex w-full flex-col items-start gap-3 tab:flex-row tab:gap-4"
       >
-        <Button
-          href={links.createAccount}
+        <PrimaryCta
           variant="primary"
           size="sm"
           className="w-full tab:w-auto"
-        >
-          Get started
-        </Button>
+        />
         <Button
           href={links.signIn}
           variant="outline"

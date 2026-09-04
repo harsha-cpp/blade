@@ -40,7 +40,7 @@ def test_no_entities_scores_zero() -> None:
 
 
 def test_scale_is_zero_to_one_hundred() -> None:
-    risk, _ = score([_entity("IN_AADHAAR", "****7460")] * 1)
+    risk, _ = score([_entity("IN_AADHAAR", "****7460")])
     assert 0.0 <= risk <= 100.0
     assert risk > 50.0
 

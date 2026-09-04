@@ -12,6 +12,18 @@ export function extractUserEmail(
   return undefined;
 }
 
+const ACCOUNT_SWITCHER_SELECTOR = [
+  'a[href*="SignOutOptions"]',
+  'a[href*="accounts.google.com"]',
+  '[aria-label*="Google Account" i]',
+].join(",");
+
+const LABELLED_ADDRESS_SELECTOR = '[aria-label*="@" i], img[alt*="@" i]';
+
+function labelOf(el: Element): string | null {
+  return el.getAttribute("aria-label") ?? el.getAttribute("alt");
+}
+
 function* candidates(
   doc: Document,
   compose?: Element | null,
@@ -19,19 +31,18 @@ function* candidates(
   if (compose) {
     yield compose.querySelector<HTMLInputElement>('input[name="from"]')?.value;
     const fromRow = compose.querySelector('[aria-label*="From" i]');
-    yield fromRow?.getAttribute("email") ?? fromRow?.textContent;
+    if (fromRow) {
+      yield fromRow.getAttribute("email") ?? fromRow.textContent;
+      for (const el of fromRow.querySelectorAll(LABELLED_ADDRESS_SELECTOR)) {
+        yield labelOf(el);
+      }
+    }
   }
 
-  const accountSelectors = [
-    'a[href*="SignOutOptions"][aria-label]',
-    'a[href*="accounts.google.com"][aria-label]',
-    '[aria-label*="Google Account" i]',
-    'header [aria-label*="@" i]',
-    'img[alt*="@" i]',
-  ];
-  for (const selector of accountSelectors) {
-    for (const el of doc.querySelectorAll(selector)) {
-      yield el.getAttribute("aria-label") ?? el.getAttribute("alt");
+  for (const account of doc.querySelectorAll(ACCOUNT_SWITCHER_SELECTOR)) {
+    yield labelOf(account);
+    for (const el of account.querySelectorAll(LABELLED_ADDRESS_SELECTOR)) {
+      yield labelOf(el);
     }
   }
 

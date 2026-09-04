@@ -1,16 +1,21 @@
 import { mountWarningModal } from "../modal/mount";
-import type {
-  AttachmentUploadResult,
-  EntityHit,
-  Verdict,
-} from "@bladedlp/shared";
-import { detectPhi, stripHtml } from "./phi";
+import type { AttachmentUploadResult, Verdict } from "@bladedlp/shared";
+import { detectPhi, type PhiHit } from "./phi";
+import { fetchAttachmentRefs, scanAttachments } from "./attachments";
 import {
-  fetchAttachmentRefs,
-  scanAttachments,
-  type AttachmentUrlRef,
-} from "./attachments";
-import { extractUserEmail } from "./identity";
+  extractComposeData,
+  fileKey,
+  scanUntilStable,
+  type ComposeData,
+} from "./compose";
+import { freezeCompose } from "./compose-freeze";
+import { claimInjection, GMAIL_GUARD_MARKER } from "./injection-marker";
+import { parseVerdict } from "./verdict";
+import {
+  isContextInvalidatedError,
+  isExtensionContextValid,
+  showContextInvalidatedBanner,
+} from "./extension-context";
 import {
   attachmentStep,
   showScanProgress,
@@ -25,11 +30,13 @@ import {
   type OrgPolicy,
 } from "./policy";
 import {
-  findSendButton,
+  findSendControl,
+  findSendControlTrigger,
   findSendTrigger,
   isActivationKey,
   isSendShortcut,
   isTextEntryTarget,
+  resolveSendShortcut,
   type SendTrigger,
   type SendTriggerKind,
 } from "./send-paths";
@@ -44,6 +51,10 @@ import {
   VERDICT_CACHE_TTL_MS,
 } from "../config";
 import {
+  backendFailureStep,
+  BackendRequestError,
+  isAttachmentRejected,
+  retryDelayMs,
   sendBackendRequest,
   sendBackendRequestAndForget,
 } from "../backend-client";
@@ -72,8 +83,8 @@ function buildPolicy(
   config: CachedConfig | undefined,
 ): OrgPolicy {
   const next = emptyPolicy();
-  if (!code || !config) return next;
-  if (config.org_code && config.org_code.trim().toUpperCase() !== code)
+  if (!config) return next;
+  if (code && config.org_code && config.org_code.trim().toUpperCase() !== code)
     return next;
 
   for (const entry of config.domains ?? []) {
@@ -104,7 +115,10 @@ async function loadOrgState(): Promise<void> {
   );
 }
 
-chrome.storage.onChanged.addListener((changes, area) => {
+function onStoredStateChanged(
+  changes: { [key: string]: chrome.storage.StorageChange },
+  area: chrome.storage.AreaName,
+): void {
   if (area !== "local") return;
   if (changes.blade_org_code) {
     orgCode =
@@ -112,6 +126,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
         ?.trim()
         .toUpperCase() ?? null;
     policy = emptyPolicy();
+    void loadOrgState();
   }
   if (changes.blade_config) {
     policy = buildPolicy(
@@ -119,9 +134,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       changes.blade_config.newValue as CachedConfig | undefined,
     );
   }
-});
-
-void loadOrgState().then(() => maybeShowOrgBanner());
+}
 
 function styled<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -217,11 +230,21 @@ function showOrgCodeBanner(): void {
   });
 }
 
+function isLinked(): boolean {
+  return orgCode !== null || policy.hasConfig;
+}
+
 async function maybeShowOrgBanner(): Promise<void> {
-  if (orgCode) return;
+  if (isLinked()) return;
   const result = await chrome.storage.local.get("blade_org_skipped");
   if (result.blade_org_skipped) return;
   setTimeout(showOrgCodeBanner, 1500);
+}
+
+function reportContextLoss(err: unknown): void {
+  if (isContextInvalidatedError(err) || !isExtensionContextValid()) {
+    showContextInvalidatedBanner(document);
+  }
 }
 
 function rememberUserEmail(email: string | undefined): string | undefined {
@@ -234,7 +257,7 @@ function reportEvent(
   userEmail: string | undefined,
   recipients: string[],
 ): void {
-  if (!orgCode) return;
+  if (!isLinked()) return;
 
   sendBackendRequestAndForget({
     type: BACKEND_REQUEST_MESSAGE,
@@ -268,21 +291,26 @@ async function uploadAttachmentForBackend(
   clientScanId: string,
   file: File,
   signal: AbortSignal,
-): Promise<AttachmentUploadResult> {
+): Promise<AttachmentUploadResult | null> {
   const dataBase64 = encodeBase64(new Uint8Array(await file.arrayBuffer()));
-  return sendBackendRequest<AttachmentUploadResult>(
-    {
-      type: BACKEND_REQUEST_MESSAGE,
-      kind: "attachment-upload",
-      timeoutMs: ATTACHMENT_UPLOAD_TIMEOUT_MS,
-      clientScanId,
-      attachmentId: crypto.randomUUID(),
-      filename: file.name || "attachment",
-      mimeType: file.type || "application/octet-stream",
-      dataBase64,
-    },
-    signal,
-  );
+  try {
+    return await sendBackendRequest<AttachmentUploadResult>(
+      {
+        type: BACKEND_REQUEST_MESSAGE,
+        kind: "attachment-upload",
+        timeoutMs: ATTACHMENT_UPLOAD_TIMEOUT_MS,
+        clientScanId,
+        attachmentId: crypto.randomUUID(),
+        filename: file.name || "attachment",
+        mimeType: file.type || "application/octet-stream",
+        dataBase64,
+      },
+      signal,
+    );
+  } catch (err) {
+    if (isAttachmentRejected(err)) return null;
+    throw err;
+  }
 }
 
 async function pollAttachmentScan(
@@ -292,17 +320,24 @@ async function pollAttachmentScan(
   const deadline = Date.now() + ATTACHMENT_POLL_TIMEOUT_MS;
   let latest: AttachmentUploadResult | null = null;
   while (Date.now() < deadline && !signal.aborted) {
-    latest = await sendBackendRequest<AttachmentUploadResult>(
-      {
-        type: BACKEND_REQUEST_MESSAGE,
-        kind: "attachment-status",
-        timeoutMs: ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
-        attachmentScanId,
-      },
-      signal,
-    );
-    if (latest.status !== "queued") return latest;
-    await sleep(ATTACHMENT_POLL_INTERVAL_MS, signal);
+    let waitMs = ATTACHMENT_POLL_INTERVAL_MS;
+    try {
+      latest = await sendBackendRequest<AttachmentUploadResult>(
+        {
+          type: BACKEND_REQUEST_MESSAGE,
+          kind: "attachment-status",
+          timeoutMs: ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
+          attachmentScanId,
+        },
+        signal,
+      );
+      if (latest.status !== "queued") return latest;
+    } catch (err) {
+      const retry = retryDelayMs(err);
+      if (retry === null) throw err;
+      waitMs = Math.min(retry, ATTACHMENT_POLL_TIMEOUT_MS);
+    }
+    await sleep(waitMs, signal);
   }
   return latest ?? { attachment_scan_id: attachmentScanId, status: "queued" };
 }
@@ -318,7 +353,7 @@ async function finalizeWithBackend(
   },
   signal: AbortSignal,
 ): Promise<Verdict> {
-  return sendBackendRequest<Verdict>(
+  const body = await sendBackendRequest<unknown>(
     {
       type: BACKEND_REQUEST_MESSAGE,
       kind: "scan-finalize",
@@ -332,6 +367,21 @@ async function finalizeWithBackend(
     },
     signal,
   );
+
+  const verdict = parseVerdict(body);
+  if (!verdict) {
+    throw new BackendRequestError(
+      "http",
+      undefined,
+      "the server sent a verdict Blade could not read",
+    );
+  }
+  return verdict;
+}
+
+interface BackendScan {
+  verdict: Verdict;
+  rejectedAttachments: number;
 }
 
 async function scanWithBackend(
@@ -344,8 +394,8 @@ async function scanWithBackend(
   },
   signal: AbortSignal,
   progress: ScanProgress,
-): Promise<Verdict> {
-  if (!orgCode) throw new Error("missing org code");
+): Promise<BackendScan> {
+  if (!isLinked()) throw new Error("this install is not linked");
   const clientScanId = crypto.randomUUID();
 
   const total = input.attachments.length;
@@ -365,8 +415,12 @@ async function scanWithBackend(
     }),
   );
 
+  const accepted = uploaded.filter(
+    (scan): scan is AttachmentUploadResult => scan !== null,
+  );
+
   const resolved = await Promise.all(
-    uploaded.map((scan) =>
+    accepted.map((scan) =>
       scan.status === "queued"
         ? pollAttachmentScan(scan.attachment_scan_id, signal)
         : Promise.resolve(scan),
@@ -374,7 +428,7 @@ async function scanWithBackend(
   );
 
   progress.setStep("Checking against your organization policy...");
-  return finalizeWithBackend(
+  const verdict = await finalizeWithBackend(
     {
       clientScanId,
       subject: input.subject,
@@ -385,6 +439,7 @@ async function scanWithBackend(
     },
     signal,
   );
+  return { verdict, rejectedAttachments: uploaded.length - accepted.length };
 }
 
 async function buildLocalFallbackVerdict(
@@ -393,7 +448,7 @@ async function buildLocalFallbackVerdict(
   unreachableAttachments: number,
 ): Promise<Verdict> {
   const sweep = await scanAttachments(files);
-  const entities: EntityHit[] = [
+  const entities: PhiHit[] = [
     ...detectPhi(`${data.subject}\n${data.body}`, "body"),
     ...sweep.entities,
   ];
@@ -456,10 +511,6 @@ function resolveComposeForTrigger(
   return resolveComposeFromContext(null);
 }
 
-function fileKey(file: File): string {
-  return `${file.name}::${file.size}::${file.lastModified}`;
-}
-
 function getAttachmentMap(compose: Element): Map<string, File> {
   let map = composeAttachments.get(compose);
   if (!map) {
@@ -470,124 +521,25 @@ function getAttachmentMap(compose: Element): Map<string, File> {
 }
 
 function captureFiles(compose: Element, files: FileList | File[] | null): void {
-  if (!files) return;
+  if (!files || pendingScans.has(compose)) return;
   const map = getAttachmentMap(compose);
   for (const file of Array.from(files)) map.set(fileKey(file), file);
 }
 
-interface ComposeData {
-  subject: string;
-  body: string;
-  recipients: string[];
-  userEmail: string | undefined;
-  attachments: File[];
-  unresolvedRefs: AttachmentUrlRef[];
-  fingerprint: string;
-}
-
-function extractComposeData(compose: Element): ComposeData {
-  const subjectInput = compose.querySelector<HTMLInputElement>(
-    'input[name="subjectbox"]',
+function readCompose(compose: Element): ComposeData {
+  const data = extractComposeData(
+    compose,
+    Array.from(getAttachmentMap(compose).values()),
   );
-  const subject = subjectInput?.value ?? "";
-
-  const bodyEl = compose.querySelector<HTMLElement>(
-    '[role="textbox"][aria-label*="Body" i], [role="textbox"][g_editable="true"], div[aria-label*="Message Body" i]',
-  );
-  const body = stripHtml(bodyEl?.innerHTML ?? "");
-
-  const recipients: string[] = [];
-  compose
-    .querySelectorAll<HTMLElement>("[email], [data-hovercard-id]")
-    .forEach((chip) => {
-      const email =
-        chip.getAttribute("email") ||
-        chip.getAttribute("data-hovercard-id") ||
-        "";
-      if (email.includes("@")) recipients.push(email.trim());
-    });
-  const fields = ["to", "cc", "bcc"] as const;
-  for (const field of fields) {
-    compose
-      .querySelectorAll<HTMLInputElement>(`input[name="${field}"]`)
-      .forEach((input) => {
-        if (input.value) {
-          recipients.push(
-            ...input.value
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean),
-          );
-        }
-      });
-  }
-  const uniqueRecipients = [...new Set(recipients.map((r) => r.toLowerCase()))];
-
-  const attachments = Array.from(getAttachmentMap(compose).values());
-  const capturedNames = new Set(
-    attachments.map((file) => file.name.trim().toLowerCase()),
-  );
-  const unresolvedRefs = extractAttachmentRefs(compose).filter(
-    (ref) => !ref.name || !capturedNames.has(ref.name.trim().toLowerCase()),
-  );
-
-  return {
-    subject,
-    body,
-    recipients: uniqueRecipients,
-    userEmail: rememberUserEmail(extractUserEmail(document, compose)),
-    attachments,
-    unresolvedRefs,
-    fingerprint: [
-      subject,
-      body,
-      uniqueRecipients.join(","),
-      attachments.map(fileKey).sort().join("|"),
-      unresolvedRefs
-        .map((ref) => ref.url)
-        .sort()
-        .join("|"),
-    ].join(""),
-  };
-}
-
-function extractAttachmentRefs(compose: Element): AttachmentUrlRef[] {
-  const refs = new Map<string, AttachmentUrlRef>();
-  const isQuoted = (el: Element): boolean =>
-    el.closest(".gmail_quote, blockquote") !== null;
-
-  compose.querySelectorAll<HTMLElement>("[download_url]").forEach((el) => {
-    if (isQuoted(el)) return;
-    const raw = el.getAttribute("download_url");
-    if (!raw) return;
-    const parts = raw.split(":");
-    if (parts.length < 3) return;
-    const mimeType = parts[0] || undefined;
-    const name = parts[1] || undefined;
-    const url = parts.slice(2).join(":");
-    if (!url) return;
-    refs.set(url, { url, name, mimeType });
-  });
-
-  compose
-    .querySelectorAll<HTMLAnchorElement>(
-      'a[href*="view=att"], a[href*="disp=att"], a[href*="realattid="]',
-    )
-    .forEach((a) => {
-      if (isQuoted(a)) return;
-      const href = a.href;
-      if (!href || refs.has(href)) return;
-      refs.set(href, { url: href, name: a.textContent?.trim() || undefined });
-    });
-
-  return Array.from(refs.values());
+  rememberUserEmail(data.userEmail);
+  return data;
 }
 
 function allowSend(trigger: SendTrigger, compose: Element): void {
   const element = trigger.element.isConnected
     ? trigger.element
     : trigger.kind === "send"
-      ? findSendButton(compose)
+      ? findSendControl(compose)
       : null;
 
   if (!element) {
@@ -603,18 +555,90 @@ function allowSend(trigger: SendTrigger, compose: Element): void {
   }
 }
 
+const SCAN_ATTEMPT_LIMIT = 3;
+
+async function inspectDraft(
+  data: ComposeData,
+  progress: ScanProgress,
+  signal: AbortSignal,
+  isCancelled: () => boolean,
+): Promise<Verdict> {
+  let files = data.attachments;
+  let unscanned = data.driveLinks.length;
+  if (data.unresolvedRefs.length > 0) {
+    progress.setStep("Reading attachments...");
+    const fetched = await fetchAttachmentRefs(
+      data.unresolvedRefs,
+      ATTACHMENT_FETCH_TIMEOUT_MS,
+      signal,
+    );
+    files = [...files, ...fetched.files];
+    unscanned += fetched.failed;
+  }
+
+  const uploadable = files.filter(
+    (file) => file.size <= ATTACHMENT_INLINE_MAX_BYTES,
+  );
+  const tooLargeToUpload = files.length - uploadable.length;
+
+  try {
+    const scan = await scanWithBackend(
+      {
+        subject: data.subject,
+        body: data.body,
+        recipients: data.recipients,
+        userEmail: data.userEmail,
+        attachments: uploadable,
+      },
+      signal,
+      progress,
+    );
+    return withUnscannedAttachments(
+      scan.verdict,
+      unscanned + tooLargeToUpload + scan.rejectedAttachments,
+    );
+  } catch (err) {
+    if (isCancelled()) throw err;
+    reportContextLoss(err);
+    console.warn("[Blade] backend scan unavailable, deciding locally", err);
+    progress.setStep(backendFailureStep(err));
+    const verdict = await buildLocalFallbackVerdict(
+      data,
+      files,
+      unscanned + tooLargeToUpload,
+    );
+    reportEvent(verdict, data.userEmail, data.recipients);
+    return verdict;
+  }
+}
+
+function sendVerified(
+  compose: Element,
+  trigger: SendTrigger,
+  fingerprint: string,
+): void {
+  if (readCompose(compose).fingerprint === fingerprint) {
+    allowSend(trigger, compose);
+    return;
+  }
+  console.warn("[Blade] the draft changed after it was checked; rechecking");
+  showComposeNotice(compose, DRAFT_CHANGED_NOTICE_TEXT);
+  startSendIntercept(compose, trigger);
+}
+
 async function handleSendIntercept(
   compose: Element,
   trigger: SendTrigger,
 ): Promise<void> {
   if (pendingScans.has(compose)) return;
+  if (!isExtensionContextValid()) showContextInvalidatedBanner(document);
 
-  const data = extractComposeData(compose);
+  const initial = readCompose(compose);
 
   const cached = verdictCache.get(compose);
   if (
     cached &&
-    cached.fingerprint === data.fingerprint &&
+    cached.fingerprint === initial.fingerprint &&
     Date.now() - cached.at <= VERDICT_CACHE_TTL_MS
   ) {
     allowSend(trigger, compose);
@@ -629,55 +653,39 @@ async function handleSendIntercept(
     cancelled = true;
     controller.abort();
   });
+  const unfreeze = freezeCompose(compose);
   const budget = setTimeout(() => controller.abort(), SCAN_BUDGET_MS);
 
-  let verdict: Verdict;
+  let settled: { data: ComposeData; verdict: Verdict } | null = null;
   try {
-    let files = data.attachments;
-    let unscanned = 0;
-    if (data.unresolvedRefs.length > 0) {
-      progress.setStep("Reading attachments...");
-      const fetched = await fetchAttachmentRefs(
-        data.unresolvedRefs,
-        ATTACHMENT_FETCH_TIMEOUT_MS,
-        controller.signal,
-      );
-      files = [...files, ...fetched.files];
-      unscanned = fetched.failed;
-    }
-
-    const uploadable = files.filter(
-      (file) => file.size <= ATTACHMENT_INLINE_MAX_BYTES,
+    settled = await scanUntilStable(
+      () => readCompose(compose),
+      (data) =>
+        inspectDraft(data, progress, controller.signal, () => cancelled),
+      SCAN_ATTEMPT_LIMIT,
+      () =>
+        progress.setStep(
+          "The draft changed while it was checked. Checking again...",
+        ),
     );
-    const tooLargeToUpload = files.length - uploadable.length;
-
-    try {
-      verdict = await scanWithBackend(
-        {
-          subject: data.subject,
-          body: data.body,
-          recipients: data.recipients,
-          userEmail: data.userEmail,
-          attachments: uploadable,
-        },
-        controller.signal,
-        progress,
-      );
-      verdict = withUnscannedAttachments(verdict, unscanned + tooLargeToUpload);
-    } catch (err) {
-      if (cancelled) return;
-      console.warn("[Blade] backend scan unavailable, deciding locally", err);
-      progress.setStep("Server unreachable - checking locally...");
-      verdict = await buildLocalFallbackVerdict(data, files, unscanned);
-      reportEvent(verdict, data.userEmail, data.recipients);
-    }
+  } catch (err) {
+    if (!cancelled) throw err;
   } finally {
     clearTimeout(budget);
     progress.close();
+    unfreeze();
     pendingScans.delete(compose);
   }
 
   if (cancelled) return;
+
+  if (!settled) {
+    console.warn("[Blade] the draft kept changing during the scan; not sent");
+    showComposeNotice(compose, DRAFT_UNSTABLE_NOTICE_TEXT);
+    return;
+  }
+
+  const { data, verdict } = settled;
 
   if (verdict.action === "allow") {
     verdictCache.set(compose, {
@@ -692,11 +700,56 @@ async function handleSendIntercept(
   mountWarningModal(
     {
       getElement: () => compose as HTMLElement,
-      send: () => allowSend(trigger, compose),
+      send: () => sendVerified(compose, trigger, data.fingerprint),
     },
     verdict,
-    orgCode,
   );
+}
+
+const COMPOSE_NOTICE_ID = "blade-compose-notice";
+const COMPOSE_NOTICE_MS = 10000;
+const SEND_CONTROL_NOTICE_TEXT =
+  "Blade could not find the send button in this compose window. Reload Gmail or switch the display language to English.";
+const DRAFT_CHANGED_NOTICE_TEXT =
+  "The draft changed after Blade checked it, so it was not sent. Blade is checking it again.";
+const DRAFT_UNSTABLE_NOTICE_TEXT =
+  "The draft kept changing while Blade was checking it, so nothing was sent. Wait a moment and send again.";
+
+function showComposeNotice(compose: Element, text: string): void {
+  document.getElementById(COMPOSE_NOTICE_ID)?.remove();
+  const p = palette();
+
+  const notice = styled(
+    "div",
+    `position:fixed;z-index:2147483645;box-sizing:border-box;display:flex;align-items:flex-start;gap:10px;max-width:420px;padding:10px 12px;background:${p.surface};color:${p.ink};border:1px solid ${p.rule};border-left:3px solid ${p.stop};border-radius:6px;font-family:${FONT_UI};font-size:12.5px;line-height:1.45;box-shadow:${p.shadow};`,
+  );
+  notice.id = COMPOSE_NOTICE_ID;
+  notice.setAttribute("role", "alert");
+
+  const message = styled("span", "flex:1;min-width:0;");
+  message.textContent = text;
+
+  const dismiss = styled(
+    "button",
+    `flex:none;height:26px;padding:0 10px;border-radius:4px;border:1px solid ${p.ruleStrong};background:${p.surface};color:${p.ink};font:inherit;font-size:12px;font-weight:500;cursor:pointer;`,
+  );
+  dismiss.type = "button";
+  dismiss.textContent = "Dismiss";
+
+  notice.append(message, dismiss);
+  document.body.appendChild(notice);
+
+  const rect = compose.getBoundingClientRect();
+  notice.style.left = `${Math.max(8, rect.left + 8)}px`;
+  notice.style.top = `${Math.max(8, rect.bottom - 96)}px`;
+
+  const remove = (): void => notice.remove();
+  dismiss.addEventListener("click", remove);
+  setTimeout(remove, COMPOSE_NOTICE_MS);
+}
+
+function showSendControlNotice(compose: Element): void {
+  showComposeNotice(compose, SEND_CONTROL_NOTICE_TEXT);
 }
 
 function startSendIntercept(compose: Element, trigger: SendTrigger): void {
@@ -754,92 +807,92 @@ function instrumentCompose(compose: Element): void {
   );
 }
 
-document.addEventListener(
-  "click",
-  (event) => {
-    if (bypassing) return;
-    const target = event.target instanceof Element ? event.target : null;
-    const trigger = findSendTrigger(target);
-    if (!trigger) return;
-    const compose = resolveComposeForTrigger(trigger.kind, trigger.element);
-    if (!compose) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    startSendIntercept(compose, trigger);
-  },
-  true,
-);
+interface ComposeSend {
+  trigger: SendTrigger;
+  compose: Element;
+}
+
+function resolveComposeSend(target: Element | null): ComposeSend | null {
+  const labelled = findSendTrigger(target);
+  if (labelled) {
+    const compose = resolveComposeForTrigger(labelled.kind, labelled.element);
+    return compose ? { trigger: labelled, compose } : null;
+  }
+  if (!target?.closest('[role="button"],button')) return null;
+  const compose = findComposeAncestor(target);
+  if (!compose) return null;
+  const structural = findSendControlTrigger(compose, target);
+  return structural ? { trigger: structural, compose } : null;
+}
+
+function onDocumentClick(event: MouseEvent): void {
+  if (bypassing) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const send = resolveComposeSend(target);
+  if (!send) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  startSendIntercept(send.compose, send.trigger);
+}
 
 let swallowedKey: string | null = null;
 
-document.addEventListener(
-  "keydown",
-  (event) => {
-    if (bypassing) return;
-    const target = event.target instanceof Element ? event.target : null;
+function onDocumentKeyDown(event: KeyboardEvent): void {
+  if (bypassing) return;
+  const target = event.target instanceof Element ? event.target : null;
 
-    if (isSendShortcut(event)) {
-      const compose = findComposeAncestor(target);
-      if (!compose) return;
-      const button = findSendButton(compose);
-      if (!button) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      startSendIntercept(compose, { kind: "send", element: button });
-      return;
-    }
-
-    if (!isActivationKey(event) || isTextEntryTarget(target)) return;
-    const trigger = findSendTrigger(target);
-    if (!trigger) return;
-    const compose = resolveComposeForTrigger(trigger.kind, trigger.element);
+  if (isSendShortcut(event)) {
+    const compose = findComposeAncestor(target);
     if (!compose) return;
+    const outcome = resolveSendShortcut(compose);
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    swallowedKey = event.key;
-    startSendIntercept(compose, trigger);
-  },
-  true,
-);
-
-document.addEventListener(
-  "keyup",
-  (event) => {
-    if (swallowedKey === null || event.key !== swallowedKey) return;
-    swallowedKey = null;
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-  },
-  true,
-);
-
-document.addEventListener(
-  "change",
-  (event) => {
-    const path =
-      typeof event.composedPath === "function" ? event.composedPath() : [];
-    const candidateNodes = [event.target, ...path];
-    const input = candidateNodes.find(
-      (node): node is HTMLInputElement =>
-        node instanceof HTMLInputElement && node.type === "file",
-    );
-    if (!input?.files?.length) return;
-
-    const bound = fileInputCompose.get(input);
-    const compose = bound?.isConnected
-      ? bound
-      : resolveComposeFromContext(input);
-    if (!compose) {
-      console.warn("[Blade] file picked with no compose to attribute it to");
+    if (outcome.kind === "scan") {
+      startSendIntercept(compose, outcome.trigger);
       return;
     }
-    captureFiles(compose, input.files);
-  },
-  true,
-);
+    console.warn("[Blade] no send control found in this compose; not sent");
+    showSendControlNotice(compose);
+    return;
+  }
+
+  if (!isActivationKey(event) || isTextEntryTarget(target)) return;
+  const send = resolveComposeSend(target);
+  if (!send) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  swallowedKey = event.key;
+  startSendIntercept(send.compose, send.trigger);
+}
+
+function onDocumentKeyUp(event: KeyboardEvent): void {
+  if (swallowedKey === null || event.key !== swallowedKey) return;
+  swallowedKey = null;
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+}
+
+function onDocumentChange(event: Event): void {
+  const path =
+    typeof event.composedPath === "function" ? event.composedPath() : [];
+  const candidateNodes = [event.target, ...path];
+  const input = candidateNodes.find(
+    (node): node is HTMLInputElement =>
+      node instanceof HTMLInputElement && node.type === "file",
+  );
+  if (!input?.files?.length) return;
+
+  const bound = fileInputCompose.get(input);
+  const compose = bound?.isConnected ? bound : resolveComposeFromContext(input);
+  if (!compose) {
+    console.warn("[Blade] file picked with no compose to attribute it to");
+    return;
+  }
+  captureFiles(compose, input.files);
+}
 
 const fileInputObserver = new MutationObserver((mutations) => {
   for (const m of mutations) {
@@ -868,38 +921,26 @@ const fileInputObserver = new MutationObserver((mutations) => {
     }
   }
 });
-fileInputObserver.observe(document.documentElement, {
-  childList: true,
-  subtree: true,
-});
 
-document.addEventListener(
-  "paste",
-  (event) => {
-    const dt = (event as ClipboardEvent).clipboardData;
-    if (!dt?.files?.length) return;
-    const compose = resolveComposeFromContext(
-      event.target instanceof Element ? event.target : null,
-    );
-    if (!compose) return;
-    captureFiles(compose, dt.files);
-  },
-  true,
-);
+function onDocumentPaste(event: Event): void {
+  const dt = (event as ClipboardEvent).clipboardData;
+  if (!dt?.files?.length) return;
+  const compose = resolveComposeFromContext(
+    event.target instanceof Element ? event.target : null,
+  );
+  if (!compose) return;
+  captureFiles(compose, dt.files);
+}
 
-document.addEventListener(
-  "drop",
-  (event) => {
-    const dt = (event as DragEvent).dataTransfer;
-    if (!dt?.files?.length) return;
-    const compose = resolveComposeFromContext(
-      event.target instanceof Element ? event.target : null,
-    );
-    if (!compose) return;
-    captureFiles(compose, dt.files);
-  },
-  true,
-);
+function onDocumentDrop(event: Event): void {
+  const dt = (event as DragEvent).dataTransfer;
+  if (!dt?.files?.length) return;
+  const compose = resolveComposeFromContext(
+    event.target instanceof Element ? event.target : null,
+  );
+  if (!compose) return;
+  captureFiles(compose, dt.files);
+}
 
 function observeComposeWindows(): void {
   const findAndInstrumentComposes = (): void => {
@@ -929,4 +970,22 @@ function observeComposeWindows(): void {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-observeComposeWindows();
+function startGmailGuard(): void {
+  chrome.storage.onChanged.addListener(onStoredStateChanged);
+  void loadOrgState().then(() => maybeShowOrgBanner());
+
+  document.addEventListener("click", onDocumentClick, true);
+  document.addEventListener("keydown", onDocumentKeyDown, true);
+  document.addEventListener("keyup", onDocumentKeyUp, true);
+  document.addEventListener("change", onDocumentChange, true);
+  document.addEventListener("paste", onDocumentPaste, true);
+  document.addEventListener("drop", onDocumentDrop, true);
+
+  fileInputObserver.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+  observeComposeWindows();
+}
+
+if (claimInjection(GMAIL_GUARD_MARKER)) startGmailGuard();

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { policyApi, type PolicyRule } from "../api/policy";
+import { policyApi, type PolicyRule, type PolicySet } from "../api/policy";
 import {
   describeConditions,
   isDirty,
@@ -9,12 +9,15 @@ import {
   newRule,
   removeRule,
   renumber,
+  seedDraft,
   toPolicySetIn,
   updateRule,
   validateRules,
   versionForSave,
+  type DraftRule,
 } from "../lib/policy";
 import { errorMessage } from "../lib/errors";
+import { useAuth } from "../lib/auth";
 import PageHeader from "../components/PageHeader";
 import ActionPill from "../components/ActionPill";
 import RuleEditor from "../components/policy/RuleEditor";
@@ -22,6 +25,8 @@ import Simulator from "../components/policy/Simulator";
 
 export default function PolicyRoute() {
   const qc = useQueryClient();
+  const { can } = useAuth();
+  const canEdit = can("editPolicy");
   const { data, isLoading, error } = useQuery({
     queryKey: ["policy"],
     queryFn: policyApi.get,
@@ -31,21 +36,34 @@ export default function PolicyRoute() {
     queryFn: policyApi.defaults,
   });
 
-  const [draft, setDraft] = useState<PolicyRule[] | null>(null);
+  const [draft, setDraft] = useState<DraftRule[] | null>(null);
+  const [baseline, setBaseline] = useState<PolicySet | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [matched, setMatched] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
+  const adopt = useCallback((next: PolicySet) => {
+    setBaseline(next);
+    setDraft(seedDraft(next.rules));
+  }, []);
+
   useEffect(() => {
-    if (data) setDraft(renumber(data.rules));
-  }, [data]);
+    if (!data) return;
+    if (draft === null || baseline === null) {
+      adopt(data);
+      return;
+    }
+    const serverMoved = isDirty(baseline, data.rules);
+    if (serverMoved && !isDirty(baseline, draft)) adopt(data);
+  }, [data, draft, baseline, adopt]);
 
   const save = useMutation({
-    mutationFn: (rules: PolicyRule[]) =>
+    mutationFn: (rules: DraftRule[]) =>
       policyApi.replace(toPolicySetIn(rules, versionForSave(data))),
     onSuccess: async (res) => {
       setSaveError(null);
+      adopt(res);
       qc.setQueryData(["policy"], res);
       await qc.invalidateQueries({ queryKey: ["policy"] });
     },
@@ -58,6 +76,7 @@ export default function PolicyRoute() {
     onSuccess: async (res) => {
       setConfirmReset(false);
       setSaveError(null);
+      adopt(res);
       qc.setQueryData(["policy"], res);
       await qc.invalidateQueries({ queryKey: ["policy"] });
     },
@@ -66,10 +85,17 @@ export default function PolicyRoute() {
   });
 
   const rules = useMemo(() => draft ?? [], [draft]);
-  const dirty = useMemo(() => isDirty(data, rules), [data, rules]);
+  const dirty = useMemo(
+    () => isDirty(baseline ?? undefined, rules),
+    [baseline, rules],
+  );
+  const serverChanged = useMemo(
+    () => Boolean(baseline && data && isDirty(baseline, data.rules)),
+    [baseline, data],
+  );
   const problems = useMemo(() => validateRules(rules), [rules]);
 
-  function patch(next: PolicyRule[]) {
+  function patch(next: DraftRule[]) {
     setDraft(next);
   }
 
@@ -118,25 +144,29 @@ export default function PolicyRoute() {
             {dirty && (
               <span className="badge badge-danger">Unsaved changes</span>
             )}
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => data && setDraft(renumber(data.rules))}
-              disabled={!dirty || save.isPending}
-            >
-              Discard edits
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => {
-                setSaveError(null);
-                save.mutate(rules);
-              }}
-              disabled={!dirty || problems.length > 0 || save.isPending}
-            >
-              {save.isPending ? "Saving..." : "Save policy"}
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => data && adopt(data)}
+                  disabled={!dirty || save.isPending}
+                >
+                  Discard edits
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setSaveError(null);
+                    save.mutate(rules);
+                  }}
+                  disabled={!dirty || problems.length > 0 || save.isPending}
+                >
+                  {save.isPending ? "Saving..." : "Save policy"}
+                </button>
+              </>
+            )}
           </>
         }
       />
@@ -144,6 +174,21 @@ export default function PolicyRoute() {
       {saveError && (
         <div className="error" style={{ marginBottom: 16 }}>
           {saveError}
+        </div>
+      )}
+      {serverChanged && (
+        <div className="callout callout-warn" style={{ marginBottom: 16 }}>
+          <strong>This policy was changed on the server.</strong> Reload to see
+          the latest, or keep editing and your save will overwrite it.
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => data && adopt(data)}
+            >
+              Reload
+            </button>
+          </div>
         </div>
       )}
       {problems.length > 0 && (
@@ -171,74 +216,78 @@ export default function PolicyRoute() {
           <div className="col gap-2">
             {rules.map((rule, index) => (
               <RuleRow
-                key={`${rule.id}-${index}`}
+                key={rule.key}
                 rule={rule}
                 index={index}
                 total={rules.length}
-                expanded={expanded === rule.id}
+                canEdit={canEdit}
+                expanded={expanded === rule.key}
                 matched={matched.includes(rule.id)}
                 onToggleExpand={() =>
-                  setExpanded(expanded === rule.id ? null : rule.id)
+                  setExpanded(expanded === rule.key ? null : rule.key)
                 }
                 onMove={(dir) => patch(moveRule(rules, index, dir))}
-                onChange={(p) => patch(updateRule(rules, rule.id, p))}
+                onChange={(p) => patch(updateRule(rules, rule.key, p))}
                 onRemove={() => {
                   setExpanded(null);
-                  patch(removeRule(rules, rule.id));
+                  patch(removeRule(rules, rule.key));
                 }}
               />
             ))}
           </div>
 
-          <div
-            className="row gap-2"
-            style={{ marginTop: 16, flexWrap: "wrap" }}
-          >
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                const rule = newRule(rules);
-                patch(renumber([...rules, rule]));
-                setExpanded(rule.id);
-              }}
+          {canEdit && (
+            <div
+              className="row gap-2"
+              style={{ marginTop: 16, flexWrap: "wrap" }}
             >
-              Add rule at the bottom
-            </button>
-            {!confirmReset ? (
               <button
                 type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setConfirmReset(true)}
+                className="btn btn-sm"
+                onClick={() => {
+                  const rule = newRule(rules);
+                  patch(renumber([...rules, rule]));
+                  setExpanded(rule.key);
+                }}
               >
-                Reset to defaults
+                Add rule at the bottom
               </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() => reset.mutate()}
-                  disabled={reset.isPending}
-                >
-                  {reset.isPending
-                    ? "Resetting..."
-                    : `Replace all ${rules.length} rules with the ${defaults.data?.rules.length ?? ""} built-in ones`}
-                </button>
+              {!confirmReset ? (
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setConfirmReset(false)}
+                  onClick={() => setConfirmReset(true)}
                 >
-                  Cancel
+                  Reset to defaults
                 </button>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={() => reset.mutate()}
+                    disabled={reset.isPending}
+                  >
+                    {reset.isPending
+                      ? "Resetting..."
+                      : `Replace all ${rules.length} rules with the ${defaults.data?.rules.length ?? ""} built-in ones`}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmReset(false)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <Simulator
           draft={rules}
+          saved={data?.rules ?? []}
           version={data?.version ?? "custom"}
           dirty={dirty}
           onDraftMatches={setMatched}
@@ -252,6 +301,7 @@ function RuleRow({
   rule,
   index,
   total,
+  canEdit,
   expanded,
   matched,
   onToggleExpand,
@@ -259,9 +309,10 @@ function RuleRow({
   onChange,
   onRemove,
 }: {
-  rule: PolicyRule;
+  rule: DraftRule;
   index: number;
   total: number;
+  canEdit: boolean;
   expanded: boolean;
   matched: boolean;
   onToggleExpand: () => void;
@@ -277,24 +328,26 @@ function RuleRow({
         <span className="rule-rank" title={`Evaluated ${ordinal(index + 1)}`}>
           {index + 1}
         </span>
-        <div className="rule-move">
-          <button
-            type="button"
-            onClick={() => onMove(-1)}
-            disabled={index === 0}
-            aria-label={`Move ${rule.id} earlier`}
-          >
-            <ChevronUp size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove(1)}
-            disabled={index === total - 1}
-            aria-label={`Move ${rule.id} later`}
-          >
-            <ChevronDown size={12} />
-          </button>
-        </div>
+        {canEdit && (
+          <div className="rule-move">
+            <button
+              type="button"
+              onClick={() => onMove(-1)}
+              disabled={index === 0}
+              aria-label={`Move ${rule.id} earlier`}
+            >
+              <ChevronUp size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onMove(1)}
+              disabled={index === total - 1}
+              aria-label={`Move ${rule.id} later`}
+            >
+              <ChevronDown size={12} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ minWidth: 0 }}>
@@ -320,29 +373,31 @@ function RuleRow({
             </span>
           ))}
         </div>
-        {expanded && (
+        {expanded && canEdit && (
           <RuleEditor rule={rule} onChange={onChange} onRemove={onRemove} />
         )}
       </div>
 
-      <div className="col gap-2" style={{ alignItems: "flex-end" }}>
-        <label className="row gap-1 subtle" style={{ cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={rule.enabled}
-            onChange={(e) => onChange({ enabled: e.target.checked })}
-            aria-label={`Enable ${rule.id}`}
-          />
-          on
-        </label>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={onToggleExpand}
-        >
-          {expanded ? "Done" : "Edit"}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="col gap-2" style={{ alignItems: "flex-end" }}>
+          <label className="row gap-1 subtle" style={{ cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={rule.enabled}
+              onChange={(e) => onChange({ enabled: e.target.checked })}
+              aria-label={`Enable ${rule.id}`}
+            />
+            on
+          </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onToggleExpand}
+          >
+            {expanded ? "Done" : "Edit"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

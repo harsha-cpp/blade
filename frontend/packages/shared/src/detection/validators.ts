@@ -135,8 +135,33 @@ export function validateGstin(value: string): boolean {
   return GSTIN_ALPHABET[(36 - (total % 36)) % 36] === gstin[14];
 }
 
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
 export function validateIfsc(value: string): boolean {
-  return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value.trim().toUpperCase());
+  return IFSC_PATTERN.test(value.trim().toUpperCase());
+}
+
+export function validateIfscKnownBank(
+  value: string,
+  bankCodes: ReadonlySet<string>,
+): boolean {
+  const ifsc = value.trim().toUpperCase();
+  if (!IFSC_PATTERN.test(ifsc)) return false;
+  return bankCodes.has(ifsc.slice(0, 4));
+}
+
+const ICD10_SUBCODE_PATTERN = /^[0-9][0-9A-Z]{0,3}$/;
+
+export function validateIcd10(
+  value: string,
+  categories: ReadonlySet<string>,
+): boolean {
+  const code = value.trim().toUpperCase();
+  const dot = code.indexOf(".");
+  const category = dot < 0 ? code : code.slice(0, dot);
+  if (!categories.has(category)) return false;
+  if (dot < 0) return true;
+  return ICD10_SUBCODE_PATTERN.test(code.slice(dot + 1));
 }
 
 export function validatePassport(value: string): boolean {
@@ -178,18 +203,25 @@ export function validateBankAccount(value: string): boolean {
 
 export type Validator = (value: string) => boolean;
 
+export interface ValidatorReferenceData {
+  icd10Categories: readonly string[];
+  ifscBankCodes: readonly string[];
+}
+
 export function buildValidators(
-  icd10Categories: readonly string[],
+  reference: ValidatorReferenceData,
 ): Record<string, Validator> {
-  const categories = new Set(icd10Categories);
+  const categories = new Set(reference.icd10Categories);
+  const bankCodes = new Set(reference.ifscBankCodes);
   return {
     aadhaar: validateAadhaar,
     abha_number: validateAbhaNumber,
     bank_account: validateBankAccount,
     driving_license: validateDrivingLicense,
     gstin: validateGstin,
-    icd10: (value) => categories.has(value.trim().toUpperCase().slice(0, 3)),
+    icd10: (value) => validateIcd10(value, categories),
     ifsc: validateIfsc,
+    ifsc_known_bank: (value) => validateIfscKnownBank(value, bankCodes),
     in_phone: validateInPhone,
     pan: validatePan,
     passport: validatePassport,

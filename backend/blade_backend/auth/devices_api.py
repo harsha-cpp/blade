@@ -10,8 +10,11 @@ from sqlalchemy import func, select
 
 from blade_backend.audit.service import write_audit_event
 from blade_backend.auth.tokens import DEVICE_TOKEN_PREFIX, issue_token
-from blade_backend.db.models import DeviceToken
-from blade_backend.deps import CurrentMember, DbSession, OwnerOrAdmin, Principal
+from blade_backend.db.models import DeviceToken, Organization
+from blade_backend.deps import CurrentDevice, CurrentMember, DbSession, OwnerOrAdmin, Principal
+from blade_backend.public.config import OrgConfig, build_org_config
+from blade_backend.scan.credentials import ScanPrincipal
+from blade_backend.scan.limits import enforce_scan_limit
 from blade_backend.settings import get_settings
 
 router = APIRouter()
@@ -27,6 +30,23 @@ class DeviceOut(BaseModel):
     revoked_at: str | None
     expires_at: str
     created_at: str
+
+
+class DeviceIdentity(BaseModel):
+    id: str
+    label: str
+    member_email: str | None
+    expires_at: str
+
+
+class DeviceOrganization(BaseModel):
+    name: str
+
+
+class DeviceSelf(BaseModel):
+    device: DeviceIdentity
+    organization: DeviceOrganization
+    config: OrgConfig
 
 
 class EnrollRequest(BaseModel):
@@ -90,6 +110,40 @@ async def enroll_device(
     await session.commit()
     await session.refresh(device)
     return EnrollResponse(device=_serialize(device), device_token=issued.raw_token)
+
+
+@router.get("/me", response_model=DeviceSelf)
+async def get_device_self(device: CurrentDevice, session: DbSession) -> DeviceSelf:
+    """Return the enrolled device's own record and its organisation policy config.
+
+    Authenticated by `X-Blade-Device-Token` alone, so an install that has been
+    enrolled never has to keep the org code around. The org code is deliberately
+    not part of the response: it is a shared credential and a device already has
+    a better one.
+    """
+    enforce_scan_limit(
+        ScanPrincipal(
+            org_id=device.org_id,
+            kind="device",
+            member_id=device.member_id,
+            email=device.email,
+        )
+    )
+    row = await session.get(DeviceToken, device.device_id)
+    org = await session.get(Organization, device.org_id)
+    if row is None or org is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
+
+    return DeviceSelf(
+        device=DeviceIdentity(
+            id=str(row.id),
+            label=row.label,
+            member_email=row.member_email,
+            expires_at=row.expires_at.isoformat(),
+        ),
+        organization=DeviceOrganization(name=org.name),
+        config=await build_org_config(session, org),
+    )
 
 
 @router.get("", response_model=list[DeviceOut])

@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from blade_backend.audit.service import write_audit_event
 from blade_backend.auth.passwords import PasswordPolicyError, hash_password, validate_password
-from blade_backend.db.models import MemberMfa, MemberRole, Organization, OrgMember
+from blade_backend.auth.tokens import SHA256_HASH_PREFIX, hash_token_secret_text
+from blade_backend.db.models import DeviceToken, MemberMfa, MemberRole, Organization, OrgMember
 from blade_backend.deps import CurrentMember, DbSession, OwnerOrAdmin, Principal
 from blade_backend.email import get_mailer, send_quietly
 from blade_backend.email.templates import invite_email
@@ -22,6 +24,8 @@ from blade_backend.settings import get_settings
 router = APIRouter()
 
 INVITE_TTL_DAYS = 7
+
+_INVITE_TOKEN_BYTES = 32
 
 
 class MemberOut(BaseModel):
@@ -74,6 +78,18 @@ def _serialize(member: OrgMember, *, mfa_enabled: bool = False) -> MemberOut:
         email_verified=member.email_verified_at is not None,
         mfa_enabled=mfa_enabled,
     )
+
+
+async def _member_for_invite(session: AsyncSession, submitted: str) -> OrgMember | None:
+    hashed = hash_token_secret_text(submitted)
+    member = await session.scalar(select(OrgMember).where(OrgMember.invite_token == hashed))
+    if member is None:
+        member = await session.scalar(select(OrgMember).where(OrgMember.invite_token == submitted))
+    if member is None or member.invite_token is None:
+        return None
+    stored = member.invite_token
+    expected = hashed if stored.startswith(SHA256_HASH_PREFIX) else submitted
+    return member if hmac.compare_digest(stored, expected) else None
 
 
 async def _owner_count(session: AsyncSession, org_id: UUID) -> int:
@@ -144,14 +160,14 @@ async def invite_member(
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="member already exists")
 
-    invite_token = secrets.token_urlsafe(32)
+    invite_token = secrets.token_urlsafe(_INVITE_TOKEN_BYTES)
     new_member = OrgMember(
         org_id=member.org_id,
         email=email,
         name=payload.name,
         role=payload.role,
         status="invited",
-        invite_token=invite_token,
+        invite_token=hash_token_secret_text(invite_token),
         invite_expires_at=datetime.now(UTC) + timedelta(days=INVITE_TTL_DAYS),
     )
     session.add(new_member)
@@ -183,9 +199,14 @@ async def invite_member(
 
 @router.post("/accept-invite", response_model=AcceptInviteResponse)
 async def accept_invite(payload: AcceptInvite, session: DbSession) -> AcceptInviteResponse:
-    member = await session.scalar(
-        select(OrgMember).where(OrgMember.invite_token == payload.invite_token)
-    )
+    """Turn an invitation into an active membership with a password.
+
+    Invitations are stored as a sha256 of the emailed token, so a copy of the
+    members table is not a set of working invitations. Rows written before
+    that change still hold the token itself; those are accepted once and the
+    column is cleared by acceptance.
+    """
+    member = await _member_for_invite(session, payload.invite_token.strip())
     if member is None or member.status != "invited":
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="invite not found")
     if member.invite_expires_at and member.invite_expires_at < datetime.now(UTC):
@@ -230,7 +251,21 @@ async def update_member_role(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="cannot demote self")
     await _assert_can_change_owner_status(session, member, target, payload.role)
 
+    previous_role = target.role
     target.role = payload.role
+    await write_audit_event(
+        session,
+        org_id=member.org_id,
+        actor=f"member:{member.email}",
+        category="members",
+        action="member_role_changed",
+        metadata={
+            "member_id": str(target.id),
+            "email": target.email,
+            "from_role": previous_role,
+            "to_role": payload.role,
+        },
+    )
     await session.commit()
     await session.refresh(target)
     return _serialize(target)
@@ -243,6 +278,12 @@ async def remove_member(
     session: DbSession,
     _admin: OwnerOrAdmin,
 ) -> None:
+    """Remove a member and revoke every device token enrolled in their name.
+
+    The device row survives the member with a null `member_id`, so without an
+    explicit revocation the extension on the leaver's laptop would keep
+    scanning and keep resolving to the organization.
+    """
     target = await session.get(OrgMember, member_id)
     if target is None or target.org_id != member.org_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="member not found")
@@ -252,5 +293,41 @@ async def remove_member(
     if target.role == "owner" and await _owner_count(session, target.org_id) <= 1:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="cannot remove last owner")
 
+    revoked = await revoke_member_devices(session, actor_email=member.email, target=target)
+    await write_audit_event(
+        session,
+        org_id=member.org_id,
+        actor=f"member:{member.email}",
+        category="members",
+        action="member_removed",
+        metadata={
+            "member_id": str(target.id),
+            "email": target.email,
+            "role": target.role,
+            "devices_revoked": revoked,
+        },
+    )
     await session.delete(target)
     await session.commit()
+
+
+async def revoke_member_devices(
+    session: AsyncSession, *, actor_email: str, target: OrgMember
+) -> int:
+    result = await session.execute(
+        update(DeviceToken)
+        .where(DeviceToken.member_id == target.id, DeviceToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(UTC))
+        .returning(DeviceToken.id)
+    )
+    device_ids = [str(device_id) for device_id in result.scalars().all()]
+    if device_ids:
+        await write_audit_event(
+            session,
+            org_id=target.org_id,
+            actor=f"member:{actor_email}",
+            category="device",
+            action="devices_revoked_with_member",
+            metadata={"member_id": str(target.id), "device_ids": device_ids},
+        )
+    return len(device_ids)

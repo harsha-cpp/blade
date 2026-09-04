@@ -15,6 +15,10 @@ class OcrUnavailableError(RuntimeError):
     pass
 
 
+class OcrPageTimeoutError(RuntimeError):
+    pass
+
+
 class _Output(Protocol):
     DICT: object
 
@@ -51,7 +55,7 @@ def run(image: Image.Image, config: DetectionConfig) -> tuple[str, float]:
         message = str(exc).lower()
         if "timeout" in message or "timed out" in message:
             logger.warning("tesseract OCR timed out")
-            return "", 0.0
+            raise OcrPageTimeoutError(f"tesseract timed out on a page: {exc}") from exc
         raise OcrUnavailableError(f"tesseract failed: {exc}") from exc
 
     texts = [str(value).strip() for value in data.get("text", []) if str(value).strip()]

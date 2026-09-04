@@ -19,6 +19,8 @@ class ExtractionIssue(StrEnum):
     EXTRACTION_CHAR_LIMIT = "extraction truncated at the character limit"
     EXTRACTION_BUDGET_EXHAUSTED = "skipped because the extraction budget was exhausted"
     OCR_IMAGE_LIMIT = "ocr image limit reached"
+    OCR_DEADLINE_REACHED = "ocr stopped at the document time budget"
+    OCR_PAGE_TIMEOUT = "ocr timed out on a page"
     PDF_OPEN_FAILED = "pdf could not be opened"
     PDF_ENCRYPTED = "pdf is password protected"
     PDF_PAGE_LIMIT = "pdf truncated at the page limit"

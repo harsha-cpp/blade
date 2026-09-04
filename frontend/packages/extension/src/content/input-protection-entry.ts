@@ -4,6 +4,7 @@ import {
   type InputProtectionDecision,
 } from "./input-protection";
 import { WEB_BLOCK_MESSAGE, type WebBlockReport } from "../web-block";
+import { claimInjection, WEB_GUARD_MARKER } from "./injection-marker";
 
 const INSPECTION_LIMIT_SEVERITY = "medium";
 
@@ -30,7 +31,5 @@ function report(decision: InputProtectionDecision): void {
   void chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-installInputProtection({ onBlocked: report });
-
-document.documentElement.dataset.bladeInputProtection = "on";
-console.info("[Blade] input protection active on", location.hostname);
+if (claimInjection(WEB_GUARD_MARKER))
+  installInputProtection({ onBlocked: report });

@@ -124,7 +124,7 @@ async def test_web_event_stores_the_site_and_the_masked_value() -> None:
     assert isinstance(event, ScanEvent)
     assert event.channel == "web"
     assert event.site_host == "chatgpt.com"
-    assert event.entities == [{"type": "MRN", "confidence": 0.97, "masked_value": "UHID 00XXXXX"}]
+    assert event.entities == [{"type": "MRN", "confidence": 0.97, "masked_value": "********XXXX"}]
 
 
 @pytest.mark.unit
@@ -207,3 +207,43 @@ async def test_duplicate_event_writes_no_second_audit_row() -> None:
 
     assert result == {"status": "duplicate"}
     assert _only(session, AuditEvent) == []
+
+
+@pytest.mark.unit
+async def test_a_raw_identifier_from_the_extension_is_masked_before_it_is_stored() -> None:
+    session = _session(uuid4())
+    payload = _payload(
+        entities=[{"type": "IN_AADHAAR", "confidence": 0.99, "masked_value": "7534 7930 7460"}]
+    )
+
+    await ingest_event(payload, session)  # type: ignore[arg-type]
+
+    event = _only(session, ScanEvent)[0]
+    assert isinstance(event, ScanEvent)
+    stored = str(event.entities)
+    assert "7534 7930 7460" not in stored
+    assert "7534" not in stored
+    assert event.entities[0]["masked_value"] == "**********7460"
+
+
+@pytest.mark.unit
+def test_remasking_an_already_masked_value_leaves_it_alone() -> None:
+    payload = _payload(
+        entities=[{"type": "MRN", "confidence": 0.9, "masked_value": "**********7460"}]
+    )
+
+    assert payload.entities[0].masked_value == "**********7460"
+
+
+@pytest.mark.unit
+async def test_a_name_is_masked_in_full_rather_than_down_to_four_characters() -> None:
+    session = _session(uuid4())
+    payload = _payload(
+        entities=[{"type": "PERSON", "confidence": 0.8, "masked_value": "Lakshmi Devi"}]
+    )
+
+    await ingest_event(payload, session)  # type: ignore[arg-type]
+
+    event = _only(session, ScanEvent)[0]
+    assert isinstance(event, ScanEvent)
+    assert event.entities[0]["masked_value"] == "*" * len("Lakshmi Devi")

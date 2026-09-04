@@ -68,7 +68,7 @@ def detect_email(
                     )
                 )
 
-    risk_score, severity = score(entities, resolved_config)
+    risk_score, severity = score(entities)
     return ScanResult(
         entities=entities,
         severity=severity,

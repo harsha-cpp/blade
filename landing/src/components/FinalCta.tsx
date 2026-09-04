@@ -1,4 +1,5 @@
 import Button from "./ui/Button";
+import PrimaryCta from "./ui/PrimaryCta";
 import Lottie from "./ui/Lottie";
 import { links } from "@/lib/links";
 
@@ -17,14 +18,11 @@ export default function FinalCta() {
             </p>
           </div>
           <div className="flex flex-col tab:flex-row w-full items-center justify-center gap-4 tab:gap-5 overflow-clip">
-            <Button
-              href={links.createAccount}
+            <PrimaryCta
               variant="primary"
               size="lg"
               className="w-full max-w-[326px]"
-            >
-              Get started
-            </Button>
+            />
             <Button
               href={links.signIn}
               variant="outline"

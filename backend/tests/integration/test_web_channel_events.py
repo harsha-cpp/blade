@@ -81,7 +81,7 @@ async def test_web_event_records_the_site_and_the_masked_value(
     assert len(events) == 1
     assert events[0].channel == "web"
     assert events[0].site_host == "chatgpt.com"
-    assert events[0].entities[0]["masked_value"] == "XXXX XXXX 7460"
+    assert events[0].entities[0]["masked_value"] == "**********7460"
 
 
 async def test_email_event_without_a_channel_is_still_accepted(

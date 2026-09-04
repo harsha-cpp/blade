@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
@@ -16,6 +16,7 @@ from blade_detection.extractors.issues import ExtractionIssue, no_issues, unique
 logger = structlog.get_logger(__name__)
 
 LOW_TEXT_CHARS = 50
+OCR_IMAGE_COVERAGE = 0.1
 MAX_PDF_PAGES = 50
 PDF_BASE_DPI = 72
 OCR_TARGET_DPI = 300
@@ -37,7 +38,7 @@ class _Rect(Protocol):
 class _PdfPage(Protocol):
     def get_text(self, option: str = "text") -> str: ...
 
-    def get_images(self, full: bool = False) -> list[object]: ...
+    def get_image_info(self, hashes: bool = False, xrefs: bool = False) -> list[object]: ...
 
     def get_pixmap(self, **kwargs: object) -> _Pixmap: ...
 
@@ -90,7 +91,7 @@ def extract_pages(data: bytes) -> PdfContent:
                 issues.append(ExtractionIssue.PDF_PAGE_LIMIT)
                 break
             text = page.get_text("text").strip()
-            if len(text) >= LOW_TEXT_CHARS:
+            if not _needs_ocr(page, text):
                 pages.append(PdfPageText(text=text))
                 continue
             zoom = _ocr_zoom(page)
@@ -112,6 +113,42 @@ def extract_pages(data: bytes) -> PdfContent:
     finally:
         document.close()
     return PdfContent(pages=pages, issues=unique_issues(issues))
+
+
+def _needs_ocr(page: _PdfPage, text: str) -> bool:
+    if len(text) < LOW_TEXT_CHARS:
+        return True
+    return image_coverage(page) >= OCR_IMAGE_COVERAGE
+
+
+def image_coverage(page: _PdfPage) -> float:
+    rect = page.rect
+    page_area = rect.width * rect.height
+    if page_area <= 0:
+        return 0.0
+    try:
+        placements = page.get_image_info()
+    except Exception:
+        logger.warning("pdf page image inventory failed")
+        return 0.0
+    covered = sum(_placement_area(placement, rect) for placement in placements)
+    return min(1.0, covered / page_area)
+
+
+def _placement_area(placement: object, rect: _Rect) -> float:
+    if not isinstance(placement, dict):
+        return 0.0
+    box = cast(dict[str, object], placement).get("bbox")
+    if not isinstance(box, list | tuple) or len(cast(Sequence[object], box)) != 4:
+        return 0.0
+    edges = cast(Sequence[object], box)
+    try:
+        left, top, right, bottom = (float(cast(float, edge)) for edge in edges)
+    except (TypeError, ValueError):
+        return 0.0
+    width = max(0.0, min(right, rect.width) - max(left, 0.0))
+    height = max(0.0, min(bottom, rect.height) - max(top, 0.0))
+    return width * height
 
 
 def _target_zoom() -> float:

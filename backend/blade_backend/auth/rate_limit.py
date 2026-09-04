@@ -2,96 +2,250 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections import defaultdict, deque
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections import OrderedDict, deque
 from dataclasses import dataclass
-from typing import cast
+from uuid import UUID
 
 from redis.asyncio import Redis
 from starlette.requests import Request
 
+from blade_backend.auth.mfa import CHALLENGE_TTL_SECONDS
+from blade_backend.observability.redis_gate import RedisGate, hit_counter
 from blade_backend.observability.security import resolve_client_ip
-from blade_backend.settings import get_settings
+from blade_backend.settings import Settings, get_settings
+
+MAX_TRACKED_KEYS = 20_000
+MFA_MAX_ATTEMPTS = 5
+ACCESS_REQUEST_PER_HOUR = 5
+ACCESS_REQUEST_PER_DAY = 20
+
+_MINUTE_SECONDS = 60
+_HOUR_SECONDS = 3600
+_DAY_SECONDS = 86_400
+_IP_BUDGET_FACTOR = 20
+_EMAIL_BUDGET_FACTOR = 3
 
 
 @dataclass(frozen=True, slots=True)
 class LoginLimitResult:
     allowed: bool
     retry_after_seconds: int = 0
+    audit_due: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class WindowLimitResult:
+    allowed: bool
+    retry_after_seconds: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _Budget:
+    key: str
+    factor: int
+
+
+@dataclass(slots=True)
+class _Counter:
+    expires_at: float
+    hits: int
+
+
+class _BoundedBuckets:
+    def __init__(self, max_keys: int = MAX_TRACKED_KEYS) -> None:
+        self._buckets: OrderedDict[str, deque[float]] = OrderedDict()
+        self._max_keys = max_keys
+
+    def bucket(self, key: str) -> deque[float]:
+        found = self._buckets.get(key)
+        if found is None:
+            found = deque[float]()
+            self._buckets[key] = found
+        self._buckets.move_to_end(key)
+        while len(self._buckets) > self._max_keys:
+            self._buckets.popitem(last=False)
+        return found
+
+    def tracked_keys(self) -> int:
+        return len(self._buckets)
+
+
+class _BoundedCounters:
+    def __init__(self, max_keys: int = MAX_TRACKED_KEYS) -> None:
+        self._counters: OrderedDict[str, _Counter] = OrderedDict()
+        self._max_keys = max_keys
+
+    def increment(self, key: str, ttl_seconds: int) -> int:
+        counter = self._live(key)
+        if counter is None:
+            counter = _Counter(expires_at=time.monotonic() + ttl_seconds, hits=0)
+            self._counters[key] = counter
+        counter.hits += 1
+        self._counters.move_to_end(key)
+        while len(self._counters) > self._max_keys:
+            self._counters.popitem(last=False)
+        return counter.hits
+
+    def hits(self, key: str) -> int:
+        counter = self._live(key)
+        return counter.hits if counter is not None else 0
+
+    def discard(self, key: str) -> None:
+        self._counters.pop(key, None)
+
+    def tracked_keys(self) -> int:
+        return len(self._counters)
+
+    def _live(self, key: str) -> _Counter | None:
+        counter = self._counters.get(key)
+        if counter is None:
+            return None
+        if time.monotonic() >= counter.expires_at:
+            self._counters.pop(key, None)
+            return None
+        return counter
 
 
 class LoginRateLimiter:
     def __init__(self) -> None:
-        self._buckets: MutableMapping[str, deque[float]] = defaultdict(deque)
-        self._redis: Redis | None = None
-        self._redis_checked = False
+        self._buckets = _BoundedBuckets()
+        self._redis = RedisGate()
 
     async def check(self, request: Request, email: str) -> LoginLimitResult:
         settings = get_settings()
-        key = self._key(request, email)
-        redis = await self._get_redis()
+        client = resolve_client_ip(request, settings.trusted_proxy_count)
+        identity = email.lower()
+        budgets = (
+            _Budget(_digest(f"pair:{client}:{identity}"), 1),
+            _Budget(_digest(f"ip:{client}"), _IP_BUDGET_FACTOR),
+            _Budget(_digest(f"email:{identity}"), _EMAIL_BUDGET_FACTOR),
+        )
+        redis = await self._redis.client()
         if redis is not None:
             try:
-                minute_count = await redis.incr(f"login:{key}:m")
-                if minute_count == 1:
-                    await redis.expire(f"login:{key}:m", 60)
-                hour_count = await redis.incr(f"login:{key}:h")
-                if hour_count == 1:
-                    await redis.expire(f"login:{key}:h", 3600)
-                if minute_count > settings.login_rate_limit_per_minute:
-                    ttl = await redis.ttl(f"login:{key}:m")
-                    return LoginLimitResult(False, max(int(ttl), 1))
-                if hour_count > settings.login_rate_limit_per_hour:
-                    ttl = await redis.ttl(f"login:{key}:h")
-                    return LoginLimitResult(False, max(int(ttl), 1))
-                return LoginLimitResult(True)
+                return await self._check_redis(redis, budgets, settings)
             except Exception:
-                self._redis = None
+                self._redis.drop()
+        return self._check_memory(budgets, settings)
 
-        return self._check_memory(key)
-
-    async def _get_redis(self) -> Redis | None:
-        if self._redis_checked:
-            return self._redis
-        self._redis_checked = True
-        settings = get_settings()
-        try:
-            redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
-                settings.redis_url,
-                socket_connect_timeout=0.05,
-                socket_timeout=0.05,
-                decode_responses=True,
-            )
-            ping = cast(
-                Callable[[], Awaitable[object]],
-                redis.ping,  # pyright: ignore[reportUnknownMemberType]
-            )
-            await ping()
-            self._redis = redis
-        except Exception:
-            self._redis = None
-        return self._redis
-
-    def _check_memory(self, key: str) -> LoginLimitResult:
-        settings = get_settings()
-        now = time.monotonic()
-        minute_key = f"{key}:m"
-        hour_key = f"{key}:h"
-        minute_bucket = self._buckets[minute_key]
-        hour_bucket = self._buckets[hour_key]
-        _prune(minute_bucket, now, 60)
-        _prune(hour_bucket, now, 3600)
-        if len(minute_bucket) >= settings.login_rate_limit_per_minute:
-            return LoginLimitResult(False, _retry_after(minute_bucket, now, 60))
-        if len(hour_bucket) >= settings.login_rate_limit_per_hour:
-            return LoginLimitResult(False, _retry_after(hour_bucket, now, 3600))
-        minute_bucket.append(now)
-        hour_bucket.append(now)
+    async def _check_redis(
+        self,
+        redis: Redis,
+        budgets: tuple[_Budget, ...],
+        settings: Settings,
+    ) -> LoginLimitResult:
+        for budget in budgets:
+            minute = await hit_counter(redis, f"login:{budget.key}:m", _MINUTE_SECONDS)
+            if minute > settings.login_rate_limit_per_minute * budget.factor:
+                return await self._blocked_redis(redis, budget, "m")
+            hour = await hit_counter(redis, f"login:{budget.key}:h", _HOUR_SECONDS)
+            if hour > settings.login_rate_limit_per_hour * budget.factor:
+                return await self._blocked_redis(redis, budget, "h")
         return LoginLimitResult(True)
 
-    def _key(self, request: Request, email: str) -> str:
-        client = resolve_client_ip(request, get_settings().trusted_proxy_count)
-        return hashlib.sha256(f"{client}:{email.lower()}".encode()).hexdigest()
+    async def _blocked_redis(self, redis: Redis, budget: _Budget, suffix: str) -> LoginLimitResult:
+        ttl = max(int(await redis.ttl(f"login:{budget.key}:{suffix}")), 1)
+        claimed = await redis.set(f"loginlock:{budget.key}:{suffix}", "1", ex=ttl, nx=True)
+        return LoginLimitResult(False, ttl, audit_due=bool(claimed))
+
+    def _check_memory(self, budgets: tuple[_Budget, ...], settings: Settings) -> LoginLimitResult:
+        now = time.monotonic()
+        for budget in budgets:
+            minute_bucket = self._buckets.bucket(f"{budget.key}:m")
+            _prune(minute_bucket, now, _MINUTE_SECONDS)
+            if len(minute_bucket) >= settings.login_rate_limit_per_minute * budget.factor:
+                return self._blocked_memory(budget, minute_bucket, now, _MINUTE_SECONDS, "m")
+            hour_bucket = self._buckets.bucket(f"{budget.key}:h")
+            _prune(hour_bucket, now, _HOUR_SECONDS)
+            if len(hour_bucket) >= settings.login_rate_limit_per_hour * budget.factor:
+                return self._blocked_memory(budget, hour_bucket, now, _HOUR_SECONDS, "h")
+        for budget in budgets:
+            self._buckets.bucket(f"{budget.key}:m").append(now)
+            self._buckets.bucket(f"{budget.key}:h").append(now)
+        return LoginLimitResult(True)
+
+    def _blocked_memory(
+        self,
+        budget: _Budget,
+        bucket: deque[float],
+        now: float,
+        window_seconds: int,
+        suffix: str,
+    ) -> LoginLimitResult:
+        lockout = self._buckets.bucket(f"lock:{budget.key}:{suffix}")
+        _prune(lockout, now, window_seconds)
+        audit_due = not lockout
+        if audit_due:
+            lockout.append(now)
+        return LoginLimitResult(False, _retry_after(bucket, now, window_seconds), audit_due)
+
+    def tracked_keys(self) -> int:
+        return self._buckets.tracked_keys()
+
+
+class MfaChallengeGuard:
+    def __init__(self) -> None:
+        self._redis = RedisGate()
+        self._counters = _BoundedCounters()
+
+    async def is_locked_out(self, member_id: UUID) -> bool:
+        return await self._hits(_failure_key(member_id)) >= MFA_MAX_ATTEMPTS
+
+    async def record_failure(self, member_id: UUID) -> int:
+        return await self._increment(_failure_key(member_id))
+
+    async def clear_failures(self, member_id: UUID) -> None:
+        await self._discard(_failure_key(member_id))
+
+    async def is_spent(self, challenge_id: str) -> bool:
+        return await self._hits(_challenge_key(challenge_id)) > 0
+
+    async def spend(self, challenge_id: str) -> None:
+        await self._increment(_challenge_key(challenge_id))
+
+    async def _increment(self, key: str) -> int:
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                return await hit_counter(redis, key, CHALLENGE_TTL_SECONDS)
+            except Exception:
+                self._redis.drop()
+        return self._counters.increment(key, CHALLENGE_TTL_SECONDS)
+
+    async def _hits(self, key: str) -> int:
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                stored = await redis.get(key)
+                return int(stored) if stored is not None else 0
+            except Exception:
+                self._redis.drop()
+        return self._counters.hits(key)
+
+    async def _discard(self, key: str) -> None:
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                await redis.delete(key)
+                return
+            except Exception:
+                self._redis.drop()
+        self._counters.discard(key)
+
+    def tracked_keys(self) -> int:
+        return self._counters.tracked_keys()
+
+
+def _failure_key(member_id: UUID) -> str:
+    return f"mfafail:{member_id}"
+
+
+def _challenge_key(challenge_id: str) -> str:
+    return f"mfachallenge:{challenge_id}"
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _prune(bucket: deque[float], now: float, window_seconds: int) -> None:
@@ -105,4 +259,49 @@ def _retry_after(bucket: deque[float], now: float, window_seconds: int) -> int:
     return max(1, int(window_seconds - (now - bucket[0])))
 
 
+class AccessRequestLimiter:
+    def __init__(self) -> None:
+        self._redis = RedisGate()
+        self._buckets = _BoundedBuckets()
+
+    async def check(self, request: Request) -> WindowLimitResult:
+        client = resolve_client_ip(request, get_settings().trusted_proxy_count)
+        key = _digest(f"accessrequest:{client}")
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                return await self._check_redis(redis, key)
+            except Exception:
+                self._redis.drop()
+        return self._check_memory(key)
+
+    async def _check_redis(self, redis: Redis, key: str) -> WindowLimitResult:
+        hourly = await hit_counter(redis, f"accessreq:{key}:h", _HOUR_SECONDS)
+        if hourly > ACCESS_REQUEST_PER_HOUR:
+            return WindowLimitResult(False, max(int(await redis.ttl(f"accessreq:{key}:h")), 1))
+        daily = await hit_counter(redis, f"accessreq:{key}:d", _DAY_SECONDS)
+        if daily > ACCESS_REQUEST_PER_DAY:
+            return WindowLimitResult(False, max(int(await redis.ttl(f"accessreq:{key}:d")), 1))
+        return WindowLimitResult(True)
+
+    def _check_memory(self, key: str) -> WindowLimitResult:
+        now = time.monotonic()
+        hourly = self._buckets.bucket(f"{key}:h")
+        _prune(hourly, now, _HOUR_SECONDS)
+        if len(hourly) >= ACCESS_REQUEST_PER_HOUR:
+            return WindowLimitResult(False, _retry_after(hourly, now, _HOUR_SECONDS))
+        daily = self._buckets.bucket(f"{key}:d")
+        _prune(daily, now, _DAY_SECONDS)
+        if len(daily) >= ACCESS_REQUEST_PER_DAY:
+            return WindowLimitResult(False, _retry_after(daily, now, _DAY_SECONDS))
+        hourly.append(now)
+        daily.append(now)
+        return WindowLimitResult(True)
+
+    def tracked_keys(self) -> int:
+        return self._buckets.tracked_keys()
+
+
 login_rate_limiter = LoginRateLimiter()
+mfa_challenge_guard = MfaChallengeGuard()
+access_request_limiter = AccessRequestLimiter()

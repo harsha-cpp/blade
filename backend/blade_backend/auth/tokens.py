@@ -17,10 +17,12 @@ DEVICE_TOKEN_PREFIX = "bladedev"
 PASSWORD_RESET_PREFIX = "bladereset"
 EMAIL_VERIFY_PREFIX = "bladeverify"
 
+SHA256_HASH_PREFIX = "sha256:"
+
 _SEPARATOR = "."
 _SECRET_BYTES = 48
 _HASHER = PasswordHasher(type=Type.ID)
-_SHA256_MARKER = b"sha256:"
+_SHA256_MARKER = SHA256_HASH_PREFIX.encode("ascii")
 _ARGON2_MARKER = b"$argon2"
 
 
@@ -82,3 +84,7 @@ def _verify_legacy_token_secret(secret: str, token_hash: bytes) -> bool:
 def hash_token_secret(secret: str) -> bytes:
     digest = hashlib.sha256(secret.encode("utf-8")).hexdigest().encode("ascii")
     return _SHA256_MARKER + digest
+
+
+def hash_token_secret_text(secret: str) -> str:
+    return hash_token_secret(secret).decode("ascii")

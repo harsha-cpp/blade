@@ -39,7 +39,7 @@ export function buildManifest(backend: BackendTarget) {
         match_about_blank: true,
       },
     ],
-    permissions: ['storage', 'alarms'],
+    permissions: ['storage', 'alarms', 'scripting'],
     host_permissions: ['https://mail.google.com/*', backend.hostPermission],
     web_accessible_resources: [
       {

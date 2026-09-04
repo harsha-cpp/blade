@@ -62,8 +62,9 @@ export default function WarningModal({
   }, [pollQuarantine, verdict.action]);
 
   const copy = useMemo(
-    () => modalCopy(verdict.action, quarantineStatus),
-    [verdict.action, quarantineStatus],
+    () =>
+      modalCopy(verdict.action, quarantineStatus, verdict.matched_policy_ids),
+    [verdict.action, verdict.matched_policy_ids, quarantineStatus],
   );
 
   if (verdict.action === "allow") {
@@ -197,6 +198,7 @@ export default function WarningModal({
 function modalCopy(
   action: Verdict["action"],
   status: "pending" | "approved" | "rejected",
+  policyIds: string[] = [],
 ): {
   tone: Tone;
   verdict: string;
@@ -238,6 +240,16 @@ function modalCopy(
       title: "Waiting for a reviewer.",
       subtitle: "This message is held until someone on your team decides.",
       hint: "Keep this open and it will send itself the moment it is approved.",
+    };
+  }
+  if (policyIds.includes("unverified-recipients-no-config")) {
+    return {
+      tone: "stop",
+      verdict: "Blocked",
+      title: "This message cannot be sent yet.",
+      subtitle:
+        "This install is not linked, or its configuration could not be loaded.",
+      hint: "Contact IT to link this install, then send again.",
     };
   }
   return {

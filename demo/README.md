@@ -332,21 +332,15 @@ the organization (section 2), because an unlinked install reports nothing at all
 
 ### Confirm the guard is live
 
-Open any ordinary site, say `https://example.com`, and open DevTools. The console
-prints:
+The guard prints nothing to the page console and leaves no marker on the page,
+so a site cannot detect that Blade is installed and target it. Confirm it from
+the browser side instead. Open any ordinary site, say `https://example.com`,
+open DevTools, and in Sources open the "Content scripts" group: it lists
+`input-protection-entry.ts` under Blade Healthcare DLP.
 
-```
-[Blade] input protection active on example.com
-```
-
-You can also check the marker it sets on the page:
-
-```js
-document.documentElement.dataset.bladeInputProtection   // "on"
-```
-
-If neither is there, the content script did not run. Rebuild, reload the
-extension card, and reload the tab.
+If it is not there, the content script did not run. Rebuild, reload the
+extension card, and reload the tab. The paste below is the other way to tell:
+where the guard is live, it blocks.
 
 ### Paste an Aadhaar into ChatGPT
 

@@ -4,6 +4,7 @@ import { ChevronsUpDown, Menu, Monitor, Moon, Sun, X } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { authApi, type MfaChallenge, type OrgListItem } from "../api/auth";
 import { navGroupsFor } from "../lib/roles";
+import { usePlatformAccess } from "../lib/platform-access";
 import { useTheme, type ThemePreference } from "../lib/theme";
 import { errorMessage } from "../lib/errors";
 import ErrorBoundary from "./ErrorBoundary";
@@ -26,7 +27,13 @@ export default function Layout() {
   const [challengeOrg, setChallengeOrg] = useState<OrgListItem | null>(null);
   const switcherRef = useRef<HTMLDivElement>(null);
 
-  const groups = useMemo(() => navGroupsFor(member?.role), [member?.role]);
+  const platformAccess = usePlatformAccess();
+
+  const groups = useMemo(
+    () =>
+      navGroupsFor(member?.role, { platform: platformAccess === "allowed" }),
+    [member?.role, platformAccess],
+  );
 
   async function onLogout() {
     setSigningOut(true);
@@ -182,7 +189,7 @@ export default function Layout() {
               type="button"
               className="org-switcher-btn"
               onClick={() => setOpen((v) => !v)}
-              aria-haspopup="listbox"
+              aria-haspopup="menu"
               aria-expanded={open}
             >
               <span className="truncate">
@@ -193,14 +200,23 @@ export default function Layout() {
               </span>
             </button>
             {open ? (
-              <div className="org-switcher-dropdown" role="listbox">
-                <div className="org-switcher-item active">
+              <div
+                className="org-switcher-dropdown"
+                role="menu"
+                aria-label="Switch organization"
+              >
+                <div
+                  className="org-switcher-item active"
+                  role="menuitem"
+                  aria-disabled="true"
+                >
                   {organization?.name}
                 </div>
                 {others.map((o) => (
                   <button
                     key={o.id}
                     type="button"
+                    role="menuitem"
                     className="org-switcher-item"
                     onClick={() => void switchTo(o)}
                     disabled={switching !== null}
@@ -209,7 +225,7 @@ export default function Layout() {
                   </button>
                 ))}
                 {others.length === 0 ? (
-                  <div className="org-switcher-empty">
+                  <div className="org-switcher-empty" role="none">
                     No other organizations
                   </div>
                 ) : null}

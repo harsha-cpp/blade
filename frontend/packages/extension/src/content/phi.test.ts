@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPhi, scorePhi } from "./phi";
+import { detectPhi, scorePhi, type PhiHit } from "./phi";
 import { validateAadhaar, validatePan, RULE_PACK } from "@bladedlp/shared";
 
 const types = (text: string): string[] =>
@@ -104,5 +104,52 @@ describe("risk scoring", () => {
       ),
     );
     expect(repeated.risk).toBeLessThan(distinct.risk);
+  });
+});
+
+describe("identifiers that mask to the same string", () => {
+  const first: PhiHit = {
+    type: "IN_AADHAAR",
+    masked_value: "**********7460",
+    confidence: 0.95,
+    source: "body",
+    value_hash: "aaaa1111",
+  };
+  const second: PhiHit = { ...first, value_hash: "bbbb2222" };
+  const repeat: PhiHit = { ...first };
+
+  it("carries a value fingerprint out of the detector", () => {
+    const hit = detectPhi("Aadhaar 7534 7930 7460").find(
+      (candidate) => candidate.type === "IN_AADHAAR",
+    );
+
+    expect(hit).toBeDefined();
+    expect(hit?.value_hash).toBeTruthy();
+  });
+
+  it("scores two distinct Aadhaars ending in the same digits as two subjects", () => {
+    const two = detectPhi("Aadhaar 2000 0005 7460 and Aadhaar 2000 0011 7460");
+    const twice = detectPhi(
+      "Aadhaar 2000 0005 7460 and Aadhaar 2000 0005 7460",
+    );
+
+    expect(two).toHaveLength(2);
+    expect(two[0]?.masked_value).toBe(two[1]?.masked_value);
+    expect(two[0]?.value_hash).not.toBe(two[1]?.value_hash);
+    expect(scorePhi(two).risk).toBeGreaterThan(scorePhi(twice).risk);
+  });
+
+  it("scores two distinct patients as two subjects, not one repeat", () => {
+    expect(scorePhi([first, second]).risk).toBeGreaterThan(
+      scorePhi([first, repeat]).risk,
+    );
+  });
+
+  it("falls back to the masked value when no fingerprint is carried", () => {
+    const { value_hash: _dropped, ...bare } = first;
+
+    expect(scorePhi([bare, { ...bare }]).risk).toBe(
+      scorePhi([first, repeat]).risk,
+    );
   });
 });

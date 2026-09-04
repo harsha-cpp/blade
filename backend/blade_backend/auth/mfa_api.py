@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -20,12 +21,15 @@ from blade_backend.auth.mfa import (
     provisioning_uri,
     verify_totp,
 )
+from blade_backend.auth.rate_limit import MFA_MAX_ATTEMPTS, mfa_challenge_guard
 from blade_backend.auth.session import AuthResponse, issue_session
 from blade_backend.db.models import MemberMfa, Organization, OrgMember
 from blade_backend.deps import CurrentMember, DbSession
 from blade_backend.settings import get_settings
 
 router = APIRouter()
+
+_LOCKOUT_DETAIL = "too many mfa attempts"
 
 
 class MfaStatus(BaseModel):
@@ -96,16 +100,23 @@ async def enroll_mfa(member: CurrentMember, session: DbSession) -> EnrollRespons
 async def confirm_mfa(
     payload: CodeRequest, member: CurrentMember, session: DbSession
 ) -> ConfirmResponse:
+    """Finish enrolment by proving the authenticator works.
+
+    Wrong codes are counted against the same per-member budget as login, so
+    enrolment cannot be used to brute force a code either.
+    """
     record = await _load_mfa(session, member.member_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="mfa enrolment not started")
     if record.confirmed_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="mfa already enabled")
 
+    await _refuse_when_locked_out(member.member_id)
     secret = _decrypt_or_409(record)
     if not verify_totp(secret, payload.code):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid code")
+        await _count_bad_code(member.member_id)
 
+    await mfa_challenge_guard.clear_failures(member.member_id)
     codes = generate_backup_codes()
     record.backup_codes = [hash_backup_code(code) for code in codes]
     record.confirmed_at = datetime.now(UTC)
@@ -126,14 +137,19 @@ async def disable_mfa(payload: CodeRequest, member: CurrentMember, session: DbSe
     """Turn MFA off. Requires a current code, not just a live session.
 
     A hijacked access token would otherwise be enough to strip the second
-    factor and lock the real owner out.
+    factor and lock the real owner out. Wrong codes are counted against the
+    same per-member budget as login, so a live session is not an unlimited
+    guessing budget either.
     """
     record = await _load_mfa(session, member.member_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="mfa not enabled")
-    if record.confirmed_at is not None and not _accepts_code(record, payload.code):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid code")
+    if record.confirmed_at is not None:
+        await _refuse_when_locked_out(member.member_id)
+        if not _accepts_code(record, payload.code):
+            await _count_bad_code(member.member_id)
 
+    await mfa_challenge_guard.clear_failures(member.member_id)
     await session.delete(record)
     await write_audit_event(
         session,
@@ -154,11 +170,22 @@ async def verify_mfa(
     request: Request,
     session: DbSession,
 ) -> AuthResponse:
-    """Exchange a login challenge plus a code for a session."""
+    """Exchange a login challenge plus a code for a session.
+
+    A challenge is single use: it is burnt as soon as it buys a session, and it
+    is burnt early once the member has spent `MFA_MAX_ATTEMPTS` wrong codes
+    inside its lifetime, so a stateless 300 second token cannot be replayed as
+    an unlimited guessing budget against six digit codes or backup codes.
+    """
     try:
         challenge = decode_challenge_token(payload.challenge_token)
     except MfaError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid mfa challenge") from exc
+
+    if await mfa_challenge_guard.is_spent(challenge.challenge_id):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="mfa challenge already used")
+    if await mfa_challenge_guard.is_locked_out(challenge.member_id):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=_LOCKOUT_DETAIL)
 
     db_member = await session.get(OrgMember, challenge.member_id)
     if db_member is None or db_member.status != "active" or db_member.org_id != challenge.org_id:
@@ -171,10 +198,52 @@ async def verify_mfa(
     if record is None or record.confirmed_at is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="mfa not enabled")
     if not _accepts_code(record, payload.code):
+        await _register_failed_code(session, member=db_member, challenge_id=challenge.challenge_id)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid code")
 
+    await mfa_challenge_guard.spend(challenge.challenge_id)
+    await mfa_challenge_guard.clear_failures(db_member.id)
     record.last_used_at = datetime.now(UTC)
+    await write_audit_event(
+        session,
+        org_id=org.id,
+        actor=f"member:{db_member.email}",
+        category="auth",
+        action="login_succeeded",
+        metadata={"member_id": str(db_member.id), "factor": "mfa"},
+    )
     return await issue_session(session, response, db_member, org, request=request, mfa_enabled=True)
+
+
+async def _refuse_when_locked_out(member_id: UUID) -> None:
+    if await mfa_challenge_guard.is_locked_out(member_id):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=_LOCKOUT_DETAIL)
+
+
+async def _count_bad_code(member_id: UUID) -> NoReturn:
+    failures = await mfa_challenge_guard.record_failure(member_id)
+    if failures >= MFA_MAX_ATTEMPTS:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=_LOCKOUT_DETAIL)
+    raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid code")
+
+
+async def _register_failed_code(
+    session: DbSession, *, member: OrgMember, challenge_id: str
+) -> None:
+    failures = await mfa_challenge_guard.record_failure(member.id)
+    if failures < MFA_MAX_ATTEMPTS:
+        return
+    await mfa_challenge_guard.spend(challenge_id)
+    await write_audit_event(
+        session,
+        org_id=member.org_id,
+        actor=f"member:{member.email}",
+        category="auth",
+        action="mfa_locked_out",
+        metadata={"member_id": str(member.id), "attempts": failures},
+    )
+    await session.commit()
+    raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=_LOCKOUT_DETAIL)
 
 
 def _decrypt_or_409(record: MemberMfa) -> str:

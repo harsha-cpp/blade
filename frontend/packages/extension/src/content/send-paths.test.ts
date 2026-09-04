@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   classifySendElement,
-  findSendButton,
+  findSendControl,
+  findSendControlTrigger,
   findSendTrigger,
   isActivationKey,
   isSendShortcut,
   isTextEntryTarget,
+  resolveSendShortcut,
   triggerLabel,
 } from "./send-paths";
+import { SEND_LABEL_TABLE } from "./send-labels";
 
 function el(html: string): HTMLElement {
   const host = document.createElement("div");
@@ -164,11 +167,11 @@ describe("finding the send button to re-activate", () => {
         '<div role="button" aria-label="Discard draft" id="discard"></div>' +
         "</div>",
     );
-    expect(findSendButton(compose)?.id).toBe("send");
+    expect(findSendControl(compose)?.id).toBe("send");
   });
 
   it("returns null when the compose has no send control", () => {
-    expect(findSendButton(el('<div role="dialog"></div>'))).toBeNull();
+    expect(findSendControl(el('<div role="dialog"></div>'))).toBeNull();
   });
 });
 
@@ -212,5 +215,175 @@ describe("keyboard send paths", () => {
     expect(isTextEntryTarget(compose.querySelector("input"))).toBe(true);
     expect(isTextEntryTarget(compose.querySelector("#send"))).toBe(false);
     expect(isTextEntryTarget(null)).toBe(false);
+  });
+});
+
+describe("the localized label table", () => {
+  const attribute = (label: string): string =>
+    label.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+
+  for (const set of SEND_LABEL_TABLE) {
+    it(`reads the ${set.language} send button as a send`, () => {
+      for (const label of set.send) {
+        expect(
+          classifySendElement(
+            el(`<div role="button" aria-label="${attribute(label)}"></div>`),
+          ),
+        ).toBe("send");
+      }
+    });
+
+    it(`reads the ${set.language} schedule send strings as a send`, () => {
+      for (const label of set.scheduleSend) {
+        expect(
+          classifySendElement(
+            el(`<div role="menuitem" aria-label="${attribute(label)}"></div>`),
+          ),
+        ).toBe("schedule-open");
+        expect(
+          classifySendElement(
+            el(`<button aria-label="${attribute(label)}"></button>`),
+          ),
+        ).toBe("schedule-confirm");
+      }
+    });
+
+    it(`leaves the ${set.language} discard, save and attach controls alone`, () => {
+      for (const label of [...set.nonCommit, ...set.moreOptions]) {
+        expect(
+          classifySendElement(
+            el(`<div role="button" aria-label="${attribute(label)}"></div>`),
+          ),
+        ).toBeNull();
+      }
+    });
+
+    it(`finds the ${set.language} send button inside a compose window`, () => {
+      const label = set.send[0] ?? "";
+      const compose = el(
+        '<div role="dialog">' +
+          '<input name="subjectbox" />' +
+          '<div role="textbox" aria-label="Message Body"></div>' +
+          '<div class="footer">' +
+          '<div class="group">' +
+          `<div role="button" id="send" jslog="3" data-tooltip="${attribute(label)}"></div>` +
+          '<div class="caret"><div role="button" aria-haspopup="true" id="arrow"></div></div>' +
+          "</div>" +
+          `<div role="button" id="discard" aria-label="${attribute(set.nonCommit[0] ?? "discard")}"></div>` +
+          "</div>" +
+          "</div>",
+      );
+      expect(findSendControl(compose)?.id).toBe("send");
+    });
+  }
+
+  it("keeps every language it claims to support in one table", () => {
+    expect(SEND_LABEL_TABLE.map((set) => set.language)).toEqual([
+      "English",
+      "Hindi",
+      "Marathi",
+      "Bengali",
+      "Gujarati",
+      "Tamil",
+      "Telugu",
+      "Kannada",
+      "Malayalam",
+    ]);
+  });
+});
+
+describe("identifying the send control by structure", () => {
+  const footerCompose = (footer: string): HTMLElement =>
+    el(
+      '<div role="dialog">' +
+        '<input name="to" />' +
+        '<input name="subjectbox" />' +
+        '<div role="textbox" aria-label="Message Body"><span class="line">draft</span></div>' +
+        `<div class="footer">${footer}</div>` +
+        "</div>",
+    );
+
+  const unlabelledFooter =
+    '<div class="group">' +
+    '<div role="button" id="send" jslog="1;track:click"><span class="inner"></span></div>' +
+    '<div class="caret"><div role="button" id="arrow" aria-haspopup="true"></div></div>' +
+    "</div>" +
+    '<div role="button" id="attach" jslog="2;track:click"></div>' +
+    '<div role="button" id="discard" jslog="3;track:click"></div>';
+
+  it("finds the primary footer button when no label is recognisable", () => {
+    const compose = footerCompose(unlabelledFooter);
+    expect(findSendControl(compose)?.id).toBe("send");
+  });
+
+  it("treats a click on the unrecognised send button as a send", () => {
+    const compose = footerCompose(unlabelledFooter);
+    const inner = compose.querySelector(".inner");
+    const trigger = findSendControlTrigger(compose, inner);
+    expect(trigger?.kind).toBe("send");
+    expect((trigger?.element as HTMLElement | undefined)?.id).toBe("send");
+    expect(
+      findSendControlTrigger(compose, compose.querySelector("#discard")),
+    ).toBeNull();
+  });
+
+  it("never promotes a discard control that happens to sit beside a caret", () => {
+    const hindiDiscard = SEND_LABEL_TABLE[1]?.nonCommit[0] ?? "";
+    const compose = footerCompose(
+      '<div class="group">' +
+        `<div role="button" id="discard" jslog="1" aria-label="${hindiDiscard}"></div>` +
+        '<div role="button" id="arrow" aria-haspopup="true"></div>' +
+        "</div>",
+    );
+    expect(findSendControl(compose)).toBeNull();
+  });
+
+  it("never promotes the menu caret itself", () => {
+    const compose = footerCompose(
+      '<div class="group">' +
+        '<div role="button" id="arrow" aria-haspopup="true" jslog="1" data-tooltip="x"></div>' +
+        '<div role="button" id="second" aria-haspopup="true" jslog="2"></div>' +
+        "</div>",
+    );
+    expect(findSendControl(compose)).toBeNull();
+  });
+
+  it("refuses a lone footer button with no send-shaped group around it", () => {
+    const compose = footerCompose(
+      '<div role="button" id="mystery" jslog="1" data-tooltip="x"></div>',
+    );
+    expect(findSendControl(compose)).toBeNull();
+  });
+});
+
+describe("the keyboard shortcut inside an instrumented compose", () => {
+  it("scans when the send control is identified", () => {
+    const compose = el(
+      '<div role="dialog">' +
+        '<div role="textbox" aria-label="Message Body"></div>' +
+        '<div role="button" id="send" aria-label="Send"></div>' +
+        "</div>",
+    );
+    const outcome = resolveSendShortcut(compose);
+    expect(outcome.kind).toBe("scan");
+    expect(outcome.kind === "scan" ? outcome.trigger.element.id : null).toBe(
+      "send",
+    );
+  });
+
+  it("blocks the send when no control can be identified", () => {
+    const compose = el(
+      '<div role="dialog">' +
+        '<input name="subjectbox" />' +
+        '<div role="textbox" aria-label="Message Body"></div>' +
+        '<div role="button" id="discard" aria-label="Discard draft"></div>' +
+        "</div>",
+    );
+    expect(findSendControl(compose)).toBeNull();
+    expect(resolveSendShortcut(compose).kind).toBe("no-send-control");
+  });
+
+  it("stays out of the way when the keystroke is not in a compose", () => {
+    expect(resolveSendShortcut(null).kind).toBe("ignore");
   });
 });

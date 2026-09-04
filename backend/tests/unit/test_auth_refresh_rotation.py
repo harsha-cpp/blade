@@ -16,11 +16,27 @@ from blade_backend.settings import get_settings
 from blade_backend.utils.uuid import uuid7
 
 
+class _RotationClaim:
+    def __init__(self, granted: bool) -> None:
+        self._granted = granted
+
+    def scalar_one_or_none(self) -> object | None:
+        return uuid4() if self._granted else None
+
+
 class _FakeSession:
-    def __init__(self, record: RefreshToken, member: OrgMember, org: Organization) -> None:
+    def __init__(
+        self,
+        record: RefreshToken,
+        member: OrgMember,
+        org: Organization,
+        *,
+        rotation_available: bool = True,
+    ) -> None:
         self.record = record
         self.member = member
         self.org = org
+        self.rotation_available = rotation_available
         self.added: list[object] = []
         self.commits = 0
         self.executed: list[object] = []
@@ -37,8 +53,11 @@ class _FakeSession:
     async def scalar(self, _statement: object) -> object | None:
         return None
 
-    async def execute(self, statement: object, _params: object = None) -> None:
+    async def execute(self, statement: object, _params: object = None) -> _RotationClaim:
         self.executed.append(statement)
+        granted = self.rotation_available
+        self.rotation_available = False
+        return _RotationClaim(granted)
 
     def add(self, item: object) -> None:
         self.added.append(item)
@@ -83,7 +102,10 @@ def _request(raw_token: str) -> Request:
 
 
 def _setup(
-    *, rotated_at: datetime | None = None, revoked_at: datetime | None = None
+    *,
+    rotated_at: datetime | None = None,
+    revoked_at: datetime | None = None,
+    rotation_available: bool = True,
 ) -> tuple[str, _FakeSession, RefreshToken]:
     issued = issue_refresh_token(ttl_days=30)
     org = _org()
@@ -97,7 +119,8 @@ def _setup(
         rotated_at=rotated_at,
         revoked_at=revoked_at,
     )
-    return issued.raw_token, _FakeSession(record, member, org), record
+    session = _FakeSession(record, member, org, rotation_available=rotation_available)
+    return issued.raw_token, session, record
 
 
 def _as_session(session: _FakeSession) -> AsyncSession:
@@ -154,3 +177,14 @@ async def test_revoked_token_is_rejected_without_minting_anything() -> None:
     assert exc_info.value.status_code == 401
     assert session.added == []
     assert session.commits == 0
+
+
+@pytest.mark.unit
+async def test_losing_the_rotation_race_mints_nothing_and_takes_the_grace_path() -> None:
+    raw_token, session, record = _setup(rotation_available=False)
+
+    result = await refresh(Response(), _request(raw_token), _as_session(session))
+
+    assert result.access_token
+    assert record.rotated_at is None
+    assert [item for item in session.added if isinstance(item, RefreshToken)] == []

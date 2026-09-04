@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { PolicyRule } from "../api/policy";
 import {
   describeConditions,
   inEvaluationOrder,
@@ -9,14 +8,18 @@ import {
   ORDER_STEP,
   removeRule,
   renumber,
+  seedDraft,
+  stripDraftKeys,
   toPolicySetIn,
   updateRule,
   validateRules,
   versionForSave,
+  type DraftRule,
 } from "./policy";
 
-function rule(id: string, over: Partial<PolicyRule> = {}): PolicyRule {
+function rule(id: string, over: Partial<DraftRule> = {}): DraftRule {
   return {
+    key: id,
     id,
     description: "",
     enabled: true,
@@ -115,6 +118,52 @@ describe("removeRule / updateRule", () => {
   it("patches only the addressed rule", () => {
     const patched = updateRule(three, "allow-rest", { enabled: false });
     expect(patched.map((r) => r.enabled)).toEqual([true, true, false]);
+  });
+});
+
+describe("draft keys", () => {
+  it("gives every seeded row its own key, so a row survives an id edit", () => {
+    const draft = seedDraft([rule("a"), rule("b")]);
+    const keys = draft.map((r) => r.key);
+    expect(new Set(keys).size).toBe(2);
+    expect(seedDraft([rule("a")])[0]?.key).not.toBe(keys[0]);
+  });
+
+  it("patches only the addressed row when two rows share an id mid-edit", () => {
+    const draft = seedDraft([rule("dupe"), rule("dupe")]);
+    const secondKey = draft[1]?.key ?? "";
+    const patched = updateRule(draft, secondKey, { description: "second" });
+    expect(patched.map((r) => r.description)).toEqual(["", "second"]);
+  });
+
+  it("removes only the addressed row when two rows share an id", () => {
+    const draft = seedDraft([rule("dupe"), rule("dupe"), rule("other")]);
+    const firstKey = draft[0]?.key ?? "";
+    const left = removeRule(draft, firstKey);
+    expect(left.map((r) => r.key)).toEqual([draft[1]?.key, draft[2]?.key]);
+  });
+
+  it("keeps a new rule addressable before its id is typed", () => {
+    const draft = seedDraft([rule("a")]);
+    const added = newRule(draft);
+    const patched = updateRule([...draft, added], added.key, { id: "a" });
+    expect(patched.map((r) => r.id)).toEqual(["a", "a"]);
+    expect(
+      updateRule(patched, added.key, { id: "b" }).map((r) => r.id),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("never sends the client-only key to the server", () => {
+    const body = toPolicySetIn(seedDraft(three), "custom");
+    expect(body.rules.every((r) => !("key" in r))).toBe(true);
+    expect(stripDraftKeys(seedDraft(three)).map((r) => r.id)).toEqual(
+      three.map((r) => r.id),
+    );
+  });
+
+  it("does not report a freshly seeded draft as dirty", () => {
+    const saved = { version: "v1", rules: renumber(three), is_custom: true };
+    expect(isDirty(saved, seedDraft(saved.rules))).toBe(false);
   });
 });
 

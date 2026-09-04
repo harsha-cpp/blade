@@ -33,7 +33,8 @@ EventSeverity = Literal["none", "low", "medium", "high", "critical"]
 EventChannel = Literal["email", "web"]
 AttachmentScanStatus = Literal["scanned", "partial", "queued", "failed"]
 QuarantineStatus = Literal["pending", "approved", "rejected"]
-UserRole = MemberRole
+AccessRequestStatus = Literal["new", "contacted", "approved", "declined"]
+AccessRequestSize = Literal["under-100", "100-500", "500-1000", "over-1000"]
 
 
 class Organization(Base):
@@ -74,6 +75,7 @@ class OrgMember(Base):
         UniqueConstraint("org_id", "email", name="uq_org_member_email"),
         CheckConstraint("role IN ('owner','admin','analyst','viewer')", name="ck_org_member_role"),
         CheckConstraint("status IN ('active','invited','disabled')", name="ck_org_member_status"),
+        Index("ix_org_members_email", "email"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -440,6 +442,7 @@ class AuditEvent(Base):
     __table_args__ = (
         Index("ix_audit_events_org_created", "org_id", "created_at"),
         Index("ix_audit_events_org_category_created", "org_id", "category", "created_at"),
+        UniqueConstraint("org_id", "seq", name="uq_audit_events_org_seq"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -461,6 +464,45 @@ class AuditEvent(Base):
     )
     previous_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    row_hmac: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class AccessRequest(Base):
+    __tablename__ = "access_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('new','contacted','approved','declined')",
+            name="ck_access_requests_status",
+        ),
+        CheckConstraint(
+            "size IS NULL OR size IN ('under-100','100-500','500-1000','over-1000')",
+            name="ck_access_requests_size",
+        ),
+        Index("ix_access_requests_created", "created_at"),
+        Index("ix_access_requests_email_created", "email", "created_at"),
+        Index("ix_access_requests_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid7)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    organization: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    size: Mapped[AccessRequestSize | None] = mapped_column(Text, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_ip: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[AccessRequestStatus] = mapped_column(
+        Text, nullable=False, server_default=text("'new'")
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    handled_by: Mapped[str | None] = mapped_column(Text, nullable=True)

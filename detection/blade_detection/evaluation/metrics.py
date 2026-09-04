@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from blade_detection.evaluation.corpus import ExpectedSpan, Sample
-from blade_detection.evaluation.taxonomy import canonicalize
 from blade_detection.models import Entity
 
 DocOutcome = Literal["true_positive", "false_positive", "true_negative", "false_negative"]
@@ -103,7 +102,7 @@ def match_spans(expected: tuple[ExpectedSpan, ...], detected: list[Entity]) -> M
         for candidate in remaining:
             if candidate.start is None or candidate.end is None:
                 continue
-            if canonicalize(candidate.type) != label.type:
+            if candidate.type != label.type:
                 continue
             if candidate.source != label.field:
                 continue
@@ -120,6 +119,10 @@ def match_spans(expected: tuple[ExpectedSpan, ...], detected: list[Entity]) -> M
     return MatchResult(tuple(matched), tuple(missed), tuple(remaining))
 
 
+def _distinct_value(entity: Entity) -> str:
+    return entity.value_hash or entity.masked_value.strip().upper()
+
+
 def evaluate(scored: list[tuple[Sample, list[Entity]]]) -> EvaluationReport:
     tallies: dict[str, _Tally] = defaultdict(_Tally)
     document = _Tally()
@@ -127,18 +130,12 @@ def evaluate(scored: list[tuple[Sample, list[Entity]]]) -> EvaluationReport:
     distinct: set[tuple[str, str, str]] = set()
 
     for sample, raw_detections in scored:
-        detections = [
-            entity
-            for entity in raw_detections
-            if canonicalize(entity.type) not in sample.ignore_types
-        ]
+        detections = [entity for entity in raw_detections if entity.type not in sample.ignore_types]
 
         report.documents_evaluated += 1
         report.detections_emitted += len(detections)
         for entity in detections:
-            distinct.add(
-                (sample.id, canonicalize(entity.type), entity.masked_value.strip().upper())
-            )
+            distinct.add((sample.id, entity.type, _distinct_value(entity)))
 
         result = match_spans(sample.spans, detections)
         for label in result.matched:
@@ -146,7 +143,7 @@ def evaluate(scored: list[tuple[Sample, list[Entity]]]) -> EvaluationReport:
         for label in result.missed:
             tallies[label.type].false_negatives += 1
         for entity in result.spurious:
-            tallies[canonicalize(entity.type)].false_positives += 1
+            tallies[entity.type].false_positives += 1
 
         flagged = bool(detections)
         if sample.expect_phi and flagged:
@@ -172,7 +169,7 @@ def evaluate(scored: list[tuple[Sample, list[Entity]]]) -> EvaluationReport:
                 category=sample.category,
                 outcome=outcome,
                 missed=tuple(sorted({span.type for span in result.missed})),
-                spurious=tuple(sorted({canonicalize(item.type) for item in result.spurious})),
+                spurious=tuple(sorted({item.type for item in result.spurious})),
             )
         )
 

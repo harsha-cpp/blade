@@ -15,7 +15,16 @@ from pydantic_settings.sources import PydanticBaseSettingsSource
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
-_CSV_LIST_FIELDS = frozenset({"cors_origins", "api_rate_limit_exempt_paths"})
+_CSV_LIST_FIELDS = frozenset(
+    {
+        "cors_origins",
+        "api_rate_limit_exempt_paths",
+        "landing_origins",
+        "platform_admin_emails",
+    }
+)
+_RELAXED_ENVS = frozenset({"local", "test"})
+DEV_AUDIT_HMAC_KEY = "blade-local-audit-hmac-key-not-for-deployment"
 
 
 class _CsvOrJsonDecoder:
@@ -57,6 +66,7 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
     cors_origins: list[str] = Field(default_factory=list)
+    landing_origins: list[str] = Field(default_factory=list)
 
     database_url: str = Field(default="postgresql+asyncpg://blade:blade@localhost:5433/blade")
     database_sync_url: str = Field(default="postgresql+psycopg://blade:blade@localhost:5433/blade")
@@ -85,6 +95,7 @@ class Settings(BaseSettings):
     device_token_ttl_days: int = Field(default=365, ge=1, le=3650)
     mfa_issuer: str = Field(default="Blade DLP")
     mfa_encryption_key: SecretStr | None = Field(default=None)
+    audit_hmac_key: SecretStr | None = Field(default=None)
 
     api_rate_limit_per_minute: int = Field(default=600, ge=1)
     api_rate_limit_exempt_paths: list[str] = Field(
@@ -100,6 +111,8 @@ class Settings(BaseSettings):
     smtp_from: str = Field(default="Blade DLP <no-reply@localhost>")
     smtp_tls: bool = Field(default=True)
     app_base_url: str = Field(default="http://localhost:5173")
+    access_request_notify_email: str | None = Field(default=None)
+    platform_admin_emails: list[str] = Field(default_factory=list)
 
     attachment_temp_dir: Path = Field(default=Path("/tmp/blade-attachments"))
     quarantine_storage_dir: Path = Field(default=Path("/tmp/blade-quarantine"))
@@ -125,10 +138,18 @@ class Settings(BaseSettings):
 
     celery_task_soft_time_limit: int = Field(default=300, ge=1, le=86_400)
     celery_task_time_limit: int = Field(default=330, ge=2, le=86_400)
+    token_retention_days: int = Field(default=30, ge=1, le=3650)
+    access_request_retention_days: int = Field(default=0, ge=0, le=3650)
 
     sentry_dsn: str | None = Field(default=None)
 
-    @field_validator("cors_origins", "api_rate_limit_exempt_paths", mode="before")
+    @field_validator(
+        "cors_origins",
+        "api_rate_limit_exempt_paths",
+        "landing_origins",
+        "platform_admin_emails",
+        mode="before",
+    )
     @classmethod
     def parse_csv_list(cls, value: object) -> list[str] | object:
         if isinstance(value, str):
@@ -144,6 +165,7 @@ class Settings(BaseSettings):
         "s3_access_key_id",
         "s3_server_side_encryption",
         "smtp_user",
+        "access_request_notify_email",
         mode="before",
     )
     @classmethod
@@ -169,22 +191,28 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def enforce_production_security(self) -> Settings:
-        if not self.is_production:
+    def enforce_deployed_security(self) -> Settings:
+        if not self.hardened_config_required:
             return self
+        deployment = f"APP_ENV={self.app_env}"
         if not self.refresh_cookie_secure:
-            raise ValueError("REFRESH_COOKIE_SECURE must be true in production")
+            raise ValueError(f"REFRESH_COOKIE_SECURE must be true when {deployment}")
         if self.jwt_secret_value.startswith("change-me"):
-            raise ValueError("JWT_SECRET must be changed in production")
+            raise ValueError(f"JWT_SECRET must be changed when {deployment}")
         if self.storage_backend == "local":
             raise ValueError(
-                "STORAGE_BACKEND must be 's3' in production: local storage requires "
+                f"STORAGE_BACKEND must be 's3' when {deployment}: local storage requires "
                 "the API and the Celery worker to share a filesystem"
             )
         if self.mailer_backend == "console":
             raise ValueError(
-                "MAILER_BACKEND must be 'smtp' in production: invites and password "
+                f"MAILER_BACKEND must be 'smtp' when {deployment}: invites and password "
                 "resets are undeliverable when mail only goes to the log"
+            )
+        if self.audit_hmac_key is None:
+            raise ValueError(
+                f"AUDIT_HMAC_KEY must be set when {deployment}: without a deployment key "
+                "the audit row signatures can be recomputed by anyone who can write rows"
             )
         return self
 
@@ -193,13 +221,24 @@ class Settings(BaseSettings):
         return self.jwt_secret.get_secret_value()
 
     @property
+    def audit_hmac_key_value(self) -> str:
+        key = self.audit_hmac_key
+        return key.get_secret_value() if key is not None else DEV_AUDIT_HMAC_KEY
+
+    @property
     def mfa_encryption_key_value(self) -> str:
         key = self.mfa_encryption_key
         return key.get_secret_value() if key is not None else self.jwt_secret_value
 
     @property
-    def is_production(self) -> bool:
-        return self.app_env.lower() == "production"
+    def platform_admin_email_set(self) -> frozenset[str]:
+        return frozenset(
+            entry.strip().lower() for entry in self.platform_admin_emails if entry.strip()
+        )
+
+    @property
+    def hardened_config_required(self) -> bool:
+        return self.app_env.strip().lower() not in _RELAXED_ENVS
 
     @classmethod
     def settings_customise_sources(

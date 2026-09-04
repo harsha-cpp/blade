@@ -1,8 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
+import { ApiError } from "../lib/api";
 import { errorMessage } from "../lib/errors";
+import { publicApi } from "../api/public";
 import AuthShell from "../components/AuthShell";
+
+const SIGNUP_CLOSED =
+  "New organizations are created by invitation. Ask your administrator for an invite, or contact Blade to request access.";
 
 export default function SignupRoute() {
   const { signup } = useAuth();
@@ -14,6 +20,14 @@ export default function SignupRoute() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { data: signupStatus } = useQuery({
+    queryKey: ["signup-status"],
+    queryFn: () => publicApi.signupStatus(),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const closedSignup = signupStatus?.open_signup === false;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -28,6 +42,10 @@ export default function SignupRoute() {
       });
       navigate("/onboarding", { replace: true });
     } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setError(SIGNUP_CLOSED);
+        return;
+      }
       setError(errorMessage(err, "Could not create account"));
     } finally {
       setSubmitting(false);
@@ -39,6 +57,11 @@ export default function SignupRoute() {
       <p className="muted">
         Start protecting outgoing email from patient-data leaks in minutes.
       </p>
+      {closedSignup ? (
+        <div className="callout callout-warn" style={{ marginTop: 16 }}>
+          {SIGNUP_CLOSED}
+        </div>
+      ) : null}
       <form onSubmit={onSubmit} className="col gap-4" style={{ marginTop: 24 }}>
         <div className="field">
           <label className="label" htmlFor="signup-org">

@@ -21,7 +21,7 @@ class MailerError(RuntimeError):
 
 class ConsoleMailer:
     async def send(self, *, to: str, subject: str, body: str) -> None:
-        logger.info("mail.console", to=to, subject=subject, body=body)
+        logger.info("mail.console", to=to, subject=subject, mail_body=body)
 
 
 class SmtpMailer:

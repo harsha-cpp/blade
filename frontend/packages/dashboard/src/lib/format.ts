@@ -62,12 +62,15 @@ export function shortHash(
   return `${hash.slice(0, head)}...${hash.slice(-tail)}`;
 }
 
+const SPREADSHEET_FORMULA_START = /^[=+\-@\t\r]/;
+
 export function toCsv(
   headers: string[],
   rows: Array<Array<string | number | null | undefined>>,
 ): string {
   const cell = (v: string | number | null | undefined): string => {
-    const s = v === null || v === undefined ? "" : String(v);
+    const raw = v === null || v === undefined ? "" : String(v);
+    const s = SPREADSHEET_FORMULA_START.test(raw) ? `'${raw}` : raw;
     return `"${s.replace(/"/g, '""')}"`;
   };
   const lines = [headers.map(cell).join(",")];

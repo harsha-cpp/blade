@@ -1,22 +1,27 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import {
   quarantineApi,
   type AttachmentRef,
-  type QuarantineEntity,
   type QuarantineItem,
   type QuarantineStatus,
+  type QuarantineStatusFilter,
 } from "../api/quarantine";
-import { entityLabel } from "../lib/entities";
+import { entitySummary } from "../lib/entities";
 import { durationSince, formatTime, senderLabel } from "../lib/format";
+import { decisionErrorMessage, isAlreadyDecided } from "../lib/quarantine";
 import { errorMessage } from "../lib/errors";
 import PageHeader from "../components/PageHeader";
 import { SkeletonRows } from "../components/Skeletons";
 import RiskMeter from "../components/RiskMeter";
 import SeverityPill from "../components/SeverityPill";
 
-type Filter = QuarantineStatus | "all";
+type Filter = QuarantineStatusFilter;
 
 const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: "pending", label: "Pending" },
@@ -33,18 +38,29 @@ export default function QuarantineRoute() {
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const {
-    data = [],
+    data,
     isLoading,
     error,
-  } = useQuery({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ["quarantine", status],
-    queryFn: () => quarantineApi.list(status),
+    queryFn: ({ pageParam }) =>
+      quarantineApi.list({ status, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     refetchInterval: status === "pending" ? 20_000 : false,
   });
 
+  const items = useMemo(
+    () => data?.pages.flatMap((page) => page.items) ?? [],
+    [data],
+  );
+
   const selected = useMemo(
-    () => data.find((item) => item.id === selectedId) ?? data[0] ?? null,
-    [data, selectedId],
+    () => items.find((item) => item.id === selectedId) ?? items[0] ?? null,
+    [items, selectedId],
   );
 
   function decide(kind: "approve" | "reject", item: QuarantineItem) {
@@ -54,26 +70,30 @@ export default function QuarantineRoute() {
     return fn(item.id, note.trim() || undefined);
   }
 
+  async function onDecided() {
+    setNote("");
+    await queryClient.invalidateQueries({ queryKey: ["quarantine"] });
+  }
+
+  async function onDecisionFailed(err: unknown) {
+    setDecisionError(decisionErrorMessage(err));
+    if (isAlreadyDecided(err)) {
+      await queryClient.invalidateQueries({ queryKey: ["quarantine"] });
+    }
+  }
+
   const approve = useMutation({
     mutationFn: (item: QuarantineItem) => decide("approve", item),
-    onSuccess: async () => {
-      setNote("");
-      await queryClient.invalidateQueries({ queryKey: ["quarantine"] });
-    },
-    onError: (err) =>
-      setDecisionError(errorMessage(err, "Could not record that decision.")),
+    onSuccess: onDecided,
+    onError: onDecisionFailed,
   });
   const reject = useMutation({
     mutationFn: (item: QuarantineItem) => decide("reject", item),
-    onSuccess: async () => {
-      setNote("");
-      await queryClient.invalidateQueries({ queryKey: ["quarantine"] });
-    },
-    onError: (err) =>
-      setDecisionError(errorMessage(err, "Could not record that decision.")),
+    onSuccess: onDecided,
+    onError: onDecisionFailed,
   });
 
-  const pendingCount = data.filter((i) => i.status === "pending").length;
+  const pendingCount = items.filter((i) => i.status === "pending").length;
 
   return (
     <div>
@@ -110,10 +130,10 @@ export default function QuarantineRoute() {
             <span className="subtle">
               {isLoading
                 ? ""
-                : `${data.length} item${data.length === 1 ? "" : "s"}${status === "all" && pendingCount > 0 ? ` - ${pendingCount} awaiting a decision` : ""}`}
+                : `${items.length} item${items.length === 1 ? "" : "s"}${hasNextPage ? " so far" : ""}${status === "all" && pendingCount > 0 ? ` - ${pendingCount} awaiting a decision` : ""}`}
             </span>
           </div>
-          {isLoading && data.length === 0 ? (
+          {isLoading && items.length === 0 ? (
             <div className="table-scroll">
               <table className="table">
                 <thead>
@@ -129,7 +149,7 @@ export default function QuarantineRoute() {
                 </tbody>
               </table>
             </div>
-          ) : data.length > 0 ? (
+          ) : items.length > 0 ? (
             <div className="table-scroll">
               <table className="table">
                 <thead>
@@ -141,13 +161,22 @@ export default function QuarantineRoute() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((item) => (
+                  {items.map((item) => (
                     <tr
                       key={item.id}
                       className={
                         item.id === selected?.id ? "selected-row" : undefined
                       }
+                      tabIndex={0}
+                      aria-current={item.id === selected?.id}
+                      aria-label={`Review the message from ${senderLabel(item.sender)}`}
                       onClick={() => setSelectedId(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedId(item.id);
+                        }
+                      }}
                       style={{ cursor: "pointer" }}
                     >
                       <td className="truncate" style={{ maxWidth: 190 }}>
@@ -188,6 +217,21 @@ export default function QuarantineRoute() {
               )}
             </div>
           )}
+          {hasNextPage ? (
+            <div
+              className="row"
+              style={{ marginTop: 12, justifyContent: "center" }}
+            >
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage ? "Loading..." : "Load more"}
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="card">
@@ -305,7 +349,7 @@ function Detail({
           {item.entities.length > 0 ? (
             item.entities.map((entity, idx) => (
               <span key={`${entity.type ?? "x"}-${idx}`} className="badge">
-                {entitySummary(entity)}
+                {entitySummary(entity.type, entity.masked_value)}
               </span>
             ))
           ) : (
@@ -385,11 +429,6 @@ function StatusPill({ status }: { status: QuarantineStatus }) {
   const variant =
     status === "approved" ? "allow" : status === "rejected" ? "block" : "warn";
   return <span className={`action-pill action-pill-${variant}`}>{status}</span>;
-}
-
-function entitySummary(entity: QuarantineEntity): string {
-  const label = entityLabel(entity.type);
-  return entity.masked_value ? `${label}: ${entity.masked_value}` : label;
 }
 
 function attachmentLabel(ref: AttachmentRef): string {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { links as appLinks } from "@/lib/links";
 import Button from "./ui/Button";
+import PrimaryCta from "./ui/PrimaryCta";
 
 export default function Nav() {
   return (
@@ -29,22 +30,16 @@ export default function Nav() {
           >
             Sign in
           </Button>
-          <Button
-            href={appLinks.getStarted}
+          <PrimaryCta
             variant="navcta"
             size="navsm"
-            className="w-[104px] tab:hidden"
-          >
-            Get started
-          </Button>
-          <Button
-            href={appLinks.getStarted}
+            className="w-[132px] tab:hidden"
+          />
+          <PrimaryCta
             variant="navcta"
             size="nav"
-            className="hidden w-[109px] tab:flex lg:w-[160px]"
-          >
-            Get started
-          </Button>
+            className="hidden w-[150px] tab:flex lg:w-[176px]"
+          />
         </div>
       </div>
     </header>

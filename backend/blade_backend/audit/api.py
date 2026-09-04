@@ -1,22 +1,27 @@
 from __future__ import annotations
 
-import base64
-import binascii
+import time
+from collections import OrderedDict
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, or_, select
 
-from blade_backend.audit.service import verify_chain
+from blade_backend.api.pagination import decode_cursor, encode_cursor
+from blade_backend.audit.service import BreakKind, verify_chain
 from blade_backend.db.models import AuditEvent
-from blade_backend.deps import CurrentMember, DbSession
+from blade_backend.deps import CurrentMember, DbSession, OwnerOrAdmin
+from blade_backend.observability.redis_gate import RedisGate
 
 router = APIRouter()
 
 MAX_PAGE_SIZE = 200
+CHAIN_COOLDOWN_SECONDS = 60
+MAX_CACHED_ORGS = 5_000
+LIKE_ESCAPE = "\\"
 
 
 class AuditEventOut(BaseModel):
@@ -42,8 +47,68 @@ class AuditPage(BaseModel):
 class ChainStatus(BaseModel):
     ok: bool
     checked: int
+    legacy: int = 0
     broken_at: int | None = None
+    failed_check: BreakKind | None = None
     detail: str | None = None
+    verified_at: str
+    cached: bool = False
+
+
+class ChainStatusCache:
+    def __init__(self) -> None:
+        self._redis = RedisGate()
+        self._entries: OrderedDict[UUID, tuple[float, str]] = OrderedDict()
+
+    async def get(self, org_id: UUID) -> ChainStatus | None:
+        payload = await self._read(org_id)
+        if payload is None:
+            return None
+        return ChainStatus.model_validate_json(payload).model_copy(update={"cached": True})
+
+    async def put(self, org_id: UUID, status: ChainStatus) -> None:
+        payload = status.model_dump_json()
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                await redis.set(_chain_key(org_id), payload, ex=CHAIN_COOLDOWN_SECONDS)
+                return
+            except Exception:
+                self._redis.drop()
+        self._entries[org_id] = (time.monotonic(), payload)
+        self._entries.move_to_end(org_id)
+        while len(self._entries) > MAX_CACHED_ORGS:
+            self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    async def _read(self, org_id: UUID) -> str | None:
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                stored = await redis.get(_chain_key(org_id))
+                return str(stored) if stored is not None else None
+            except Exception:
+                self._redis.drop()
+        entry = self._entries.get(org_id)
+        if entry is None:
+            return None
+        if time.monotonic() - entry[0] >= CHAIN_COOLDOWN_SECONDS:
+            self._entries.pop(org_id, None)
+            return None
+        return entry[1]
+
+
+def _chain_key(org_id: UUID) -> str:
+    return f"auditchain:{org_id}"
+
+
+chain_status_cache = ChainStatusCache()
+
+
+def escape_like(value: str) -> str:
+    return value.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", "\\%").replace("_", "\\_")
 
 
 def serialize_audit_event(event: AuditEvent) -> AuditEventOut:
@@ -57,23 +122,6 @@ def serialize_audit_event(event: AuditEvent) -> AuditEventOut:
         event_hash=event.event_hash,
         created_at=event.created_at.isoformat(),
     )
-
-
-def _encode_cursor(event: AuditEvent) -> str:
-    raw = f"{event.created_at.isoformat()}|{event.id}"
-    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
-
-
-def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
-    try:
-        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-        timestamp, _, identifier = raw.partition("|")
-        parsed = datetime.fromisoformat(timestamp)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed, UUID(identifier)
-    except (ValueError, binascii.Error, UnicodeDecodeError) as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid cursor") from exc
 
 
 def _apply_filters(
@@ -97,13 +145,13 @@ def _apply_filters(
     if until:
         statement = statement.where(AuditEvent.created_at <= until)
     if search:
-        needle = f"%{search.strip()}%"
+        needle = f"%{escape_like(search.strip())}%"
         statement = statement.where(
             or_(
-                AuditEvent.actor.ilike(needle),
-                AuditEvent.category.ilike(needle),
-                AuditEvent.action.ilike(needle),
-                AuditEvent.event_hash.ilike(needle),
+                AuditEvent.actor.ilike(needle, escape=LIKE_ESCAPE),
+                AuditEvent.category.ilike(needle, escape=LIKE_ESCAPE),
+                AuditEvent.action.ilike(needle, escape=LIKE_ESCAPE),
+                AuditEvent.event_hash.ilike(needle, escape=LIKE_ESCAPE),
             )
         )
     return statement
@@ -134,7 +182,7 @@ async def list_audit_events(
     )
 
     if cursor:
-        cursor_time, cursor_id = _decode_cursor(cursor)
+        cursor_time, cursor_id = decode_cursor(cursor)
         statement = statement.where(
             or_(
                 AuditEvent.created_at < cursor_time,
@@ -156,7 +204,7 @@ async def list_audit_events(
     page = rows[:limit]
     return AuditPage(
         events=[serialize_audit_event(event) for event in page],
-        next_cursor=_encode_cursor(page[-1]) if has_more and page else None,
+        next_cursor=encode_cursor(page[-1].created_at, page[-1].id) if has_more and page else None,
     )
 
 
@@ -173,24 +221,28 @@ async def list_audit_categories(member: CurrentMember, session: DbSession) -> li
 
 
 @router.get("/chain", response_model=ChainStatus)
-async def verify_audit_chain(member: CurrentMember, session: DbSession) -> ChainStatus:
-    """Walk the whole chain server-side.
+async def verify_audit_chain(member: OwnerOrAdmin, session: DbSession) -> ChainStatus:
+    """Walk the whole chain server-side, in sequence-ordered batches.
 
     The dashboard could previously only check continuity within the page it had
-    loaded, which is not a tamper-evidence claim worth making.
+    loaded, which is not a tamper-evidence claim worth making. A full walk reads
+    every row of the log, so one organisation gets one real verification a
+    minute and repeat callers are served the result of that walk.
     """
-    counted = int(
-        await session.scalar(
-            select(func.count()).select_from(AuditEvent).where(AuditEvent.org_id == member.org_id)
-        )
-        or 0
+    cached = await chain_status_cache.get(member.org_id)
+    if cached is not None:
+        return cached
+
+    result = await verify_chain(session, member.org_id)
+    broken = result.broken
+    status = ChainStatus(
+        ok=result.ok,
+        checked=result.checked,
+        legacy=result.legacy,
+        broken_at=broken.position if broken else None,
+        failed_check=broken.kind if broken else None,
+        detail=broken.reason if broken else None,
+        verified_at=datetime.now(UTC).isoformat(),
     )
-    break_point = await verify_chain(session, member.org_id)
-    if break_point is None:
-        return ChainStatus(ok=True, checked=counted)
-    return ChainStatus(
-        ok=False,
-        checked=counted,
-        broken_at=break_point.position,
-        detail=break_point.reason,
-    )
+    await chain_status_cache.put(member.org_id, status)
+    return status

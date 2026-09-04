@@ -15,6 +15,7 @@ from blade_backend.email.templates import (
     invite_email,
     password_reset_email,
 )
+from blade_backend.observability.logging import scrub_log_event
 from blade_backend.settings import Settings
 
 
@@ -84,3 +85,22 @@ async def test_send_quietly_reports_success() -> None:
 
     assert await send_quietly(mailer, to="x@y.z", subject="s", body="b") is True
     assert mailer.sent == [("x@y.z", "s", "b")]
+
+
+@pytest.mark.unit
+async def test_the_console_mailer_body_survives_the_log_scrubber(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturingLogger:
+        def info(self, event: str, **fields: object) -> None:
+            captured["event"] = event
+            captured.update(fields)
+
+    monkeypatch.setattr("blade_backend.email.mailer.logger", _CapturingLogger())
+    await ConsoleMailer().send(to="x@y.z", subject="Reset your password", body="link inside")
+
+    scrubbed = scrub_log_event(None, "info", captured)
+
+    assert scrubbed["mail_body"] == "link inside"

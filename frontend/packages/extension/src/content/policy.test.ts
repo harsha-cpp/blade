@@ -47,18 +47,19 @@ describe("policy readiness", () => {
 });
 
 describe("fail closed without a usable config", () => {
-  it("warns instead of allowing when there is no config at all", () => {
+  it("blocks rather than warning when there is no config at all", () => {
     const verdict = buildLocalVerdict({
       entities: [AADHAAR],
       recipients: ["stranger@gmail.com"],
       policy: emptyPolicy(),
     });
 
-    expect(verdict.action).toBe("warn");
+    expect(verdict.action).toBe("block");
     expect(verdict.matched_policy_ids).toContain(
       "unverified-recipients-no-config",
     );
-    expect(verdict.user_message).toMatch(/no policy configuration/i);
+    expect(verdict.user_message).toMatch(/not linked to an organization/i);
+    expect(verdict.user_message).toMatch(/contact it/i);
   });
 
   it("warns when a config is cached but lists no approved recipient", () => {

@@ -4,6 +4,7 @@ import {
   ENTITY_TYPES,
   entityGroup,
   entityLabel,
+  entitySummary,
   entityTypesByGroup,
 } from "./entities";
 
@@ -39,6 +40,27 @@ describe("entityLabel", () => {
   it("has an answer for missing input", () => {
     expect(entityLabel(null)).toBe("Unknown type");
     expect(entityLabel("")).toBe("Unknown type");
+  });
+});
+
+describe("entitySummary", () => {
+  it("drops a run of stars that says nothing about the finding", () => {
+    expect(entitySummary("PERSON", "*****************")).toBe("Person name");
+    expect(entitySummary("DATE_OF_BIRTH", "**********")).toBe("Date of birth");
+  });
+
+  it("keeps the part of a masked value a reviewer can act on", () => {
+    expect(entitySummary("EMAIL_ADDRESS", "*************@apollo.in")).toBe(
+      "Email address: *************@apollo.in",
+    );
+    expect(entitySummary("MRN", "*****18")).toBe(
+      "Medical record number: *****18",
+    );
+  });
+
+  it("shows the label alone when no masked value came back", () => {
+    expect(entitySummary("IN_AADHAAR", undefined)).toBe("Aadhaar number");
+    expect(entitySummary("IN_AADHAAR", "  ")).toBe("Aadhaar number");
   });
 });
 

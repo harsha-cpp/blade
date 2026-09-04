@@ -94,6 +94,37 @@ describe("shortHash", () => {
   });
 });
 
+describe("toCsv formula injection", () => {
+  it("neutralises a cell a spreadsheet would run as a formula", () => {
+    expect(toCsv(["a"], [["=1+1"]])).toBe('"a"\r\n"\'=1+1"');
+    expect(toCsv(["a"], [["+1"]])).toBe('"a"\r\n"\'+1"');
+    expect(toCsv(["a"], [["-1"]])).toBe('"a"\r\n"\'-1"');
+    expect(toCsv(["a"], [["@SUM(A1)"]])).toBe('"a"\r\n"\'@SUM(A1)"');
+  });
+
+  it("neutralises the tab and carriage-return lead-ins too", () => {
+    expect(toCsv(["a"], [["\t=1+1"]])).toBe('"a"\r\n"\'\t=1+1"');
+    expect(toCsv(["a"], [["\r=1+1"]])).toBe('"a"\r\n"\'\r=1+1"');
+  });
+
+  it("neutralises the payload that hides behind a quote escape", () => {
+    expect(toCsv(["a"], [['=HYPERLINK("http://x","go")']])).toBe(
+      '"a"\r\n"\'=HYPERLINK(""http://x"",""go"")"',
+    );
+  });
+
+  it("leaves ordinary cells alone", () => {
+    expect(toCsv(["a"], [["nurse@hospital.example"]])).toBe(
+      '"a"\r\n"nurse@hospital.example"',
+    );
+    expect(toCsv(["a"], [["policy - block"]])).toBe('"a"\r\n"policy - block"');
+  });
+
+  it("headers get the same treatment, since a header is a cell too", () => {
+    expect(toCsv(["=cmd"], [])).toBe('"\'=cmd"');
+  });
+});
+
 describe("toCsv", () => {
   it("quotes every cell and escapes embedded quotes", () => {
     expect(toCsv(["a", "b"], [["x", 'say "hi"']])).toBe(

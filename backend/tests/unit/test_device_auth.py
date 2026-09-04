@@ -22,12 +22,16 @@ from blade_backend.deps import current_device
 
 
 class _FakeSession:
-    def __init__(self, device: DeviceToken | None) -> None:
+    def __init__(self, device: DeviceToken | None, owner_status: str = "active") -> None:
         self.device = device
+        self.owner_status = owner_status
         self.commits = 0
 
     async def get(self, model: object, _id: object) -> object | None:
         return self.device if model is DeviceToken else None
+
+    async def scalar(self, _statement: object) -> object | None:
+        return self.owner_status
 
     async def commit(self) -> None:
         self.commits += 1
@@ -172,6 +176,29 @@ async def test_a_wrong_secret_against_an_argon2_device_is_refused() -> None:
     raw_token, device = _device()
     _device_id, secret = parse_token(DEVICE_TOKEN_PREFIX, raw_token)
     device.token_hash = _argon2_hash(secret + "x")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await current_device(_as_session(_FakeSession(device)), raw_token)
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("owner_status", ["disabled", "invited"])
+async def test_a_device_whose_owner_is_no_longer_active_is_refused(owner_status: str) -> None:
+    raw_token, device = _device()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await current_device(_as_session(_FakeSession(device, owner_status)), raw_token)
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "device owner is not active"
+
+
+@pytest.mark.unit
+async def test_a_device_orphaned_by_a_removed_member_is_refused() -> None:
+    raw_token, device = _device()
+    device.member_id = None
 
     with pytest.raises(HTTPException) as exc_info:
         await current_device(_as_session(_FakeSession(device)), raw_token)

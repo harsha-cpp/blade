@@ -36,6 +36,7 @@ class EmailPayload(BaseModel):
 class Entity(BaseModel):
     type: str
     masked_value: str
+    value_hash: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     source: EntitySource
     attachment_id: str | None = None

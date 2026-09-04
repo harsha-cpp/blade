@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Self
 from uuid import UUID
 
+from blade_detection.masking import mask_value
 from fastapi import APIRouter, Header, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy import DateTime, bindparam, func, select, text
@@ -37,6 +38,12 @@ class EntityReport(BaseModel):
     type: str = Field(min_length=1, max_length=80)
     confidence: float = Field(ge=0, le=1)
     masked_value: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def remask(self) -> Self:
+        if self.masked_value is not None:
+            self.masked_value = mask_value(self.masked_value, self.type)
+        return self
 
 
 def _empty_entities() -> list[EntityReport]:

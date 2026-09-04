@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from blade_backend.audit.service import write_audit_event
 from blade_backend.db.models import ApprovedDomain, DomainClass, DomainDirection
 from blade_backend.deps import CurrentMember, DbSession, DomainEditor, OwnerOrAdmin
 
@@ -110,6 +111,18 @@ async def create_domain(
         created_by=member.member_id,
     )
     session.add(record)
+    await write_audit_event(
+        session,
+        org_id=member.org_id,
+        actor=f"member:{member.email}",
+        category="domains",
+        action="domain_added",
+        metadata={
+            "domain": normalized,
+            "direction": payload.direction,
+            "classification": payload.classification,
+        },
+    )
     try:
         await session.commit()
     except IntegrityError as exc:
@@ -131,12 +144,33 @@ async def update_domain(
     if record is None or record.org_id != member.org_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="domain not found")
 
+    before = {
+        "direction": record.direction,
+        "classification": record.classification,
+        "notes": record.notes,
+    }
     if payload.direction is not None:
         record.direction = payload.direction
     if payload.classification is not None:
         record.classification = payload.classification
     if "notes" in payload.model_fields_set:
         record.notes = payload.notes
+    await write_audit_event(
+        session,
+        org_id=member.org_id,
+        actor=f"member:{member.email}",
+        category="domains",
+        action="domain_updated",
+        metadata={
+            "domain": record.domain,
+            "before": before,
+            "after": {
+                "direction": record.direction,
+                "classification": record.classification,
+                "notes": record.notes,
+            },
+        },
+    )
 
     try:
         await session.commit()
@@ -157,5 +191,17 @@ async def delete_domain(
     record = await session.get(ApprovedDomain, domain_id)
     if record is None or record.org_id != member.org_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="domain not found")
+    await write_audit_event(
+        session,
+        org_id=member.org_id,
+        actor=f"member:{member.email}",
+        category="domains",
+        action="domain_removed",
+        metadata={
+            "domain": record.domain,
+            "direction": record.direction,
+            "classification": record.classification,
+        },
+    )
     await session.delete(record)
     await session.commit()

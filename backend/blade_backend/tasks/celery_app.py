@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from blade_backend.settings import get_settings
 
@@ -12,9 +13,14 @@ celery_app = Celery(
     "blade",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["blade_backend.tasks.scan_tasks"],
+    include=[
+        "blade_backend.tasks.scan_tasks",
+        "blade_backend.tasks.maintenance_tasks",
+    ],
 )
 REDELIVERY_MARGIN_SECONDS = 60
+PURGE_HOUR_UTC = 3
+PURGE_MINUTE_UTC = 17
 
 celery_app.conf.update(
     task_serializer="json",
@@ -30,5 +36,11 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     broker_transport_options={
         "visibility_timeout": settings.celery_task_time_limit + REDELIVERY_MARGIN_SECONDS
+    },
+    beat_schedule={
+        "purge-expired-tokens": {
+            "task": "blade.maintenance.purge_expired_tokens",
+            "schedule": crontab(hour=PURGE_HOUR_UTC, minute=PURGE_MINUTE_UTC),
+        }
     },
 )

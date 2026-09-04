@@ -1,4 +1,7 @@
-import { BACKEND_MESSAGE_GRACE_MS } from "./config";
+import {
+  BACKEND_MESSAGE_GRACE_MS,
+  BACKEND_RETRY_AFTER_FALLBACK_MS,
+} from "./config";
 import type {
   BackendFailureKind,
   BackendRequest,
@@ -8,20 +11,51 @@ import type {
 export class BackendRequestError extends Error {
   readonly kind: BackendFailureKind;
   readonly status: number | undefined;
+  readonly retryAfterMs: number | undefined;
 
-  constructor(kind: BackendFailureKind, status?: number, detail?: string) {
+  constructor(
+    kind: BackendFailureKind,
+    status?: number,
+    detail?: string,
+    retryAfterMs?: number,
+  ) {
     super(detail ?? kind);
     this.name = "BackendRequestError";
     this.kind = kind;
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+export function isNotLinked(err: unknown): boolean {
+  return (
+    err instanceof BackendRequestError &&
+    (err.status === 401 || err.status === 403)
+  );
+}
+
+export function isAttachmentRejected(err: unknown): boolean {
+  return err instanceof BackendRequestError && err.status === 413;
+}
+
+export function retryDelayMs(err: unknown): number | null {
+  if (!(err instanceof BackendRequestError) || err.status !== 429) return null;
+  return err.retryAfterMs ?? BACKEND_RETRY_AFTER_FALLBACK_MS;
+}
+
+export function backendFailureStep(err: unknown): string {
+  if (isNotLinked(err))
+    return "This install is not linked - checking locally...";
+  if (err instanceof BackendRequestError && err.status === 429) {
+    return "The server is busy - checking locally...";
+  }
+  return "Server unreachable - checking locally...";
 }
 
 async function deliver(request: BackendRequest): Promise<BackendResult> {
   try {
     const response = (await chrome.runtime.sendMessage(request)) as
-      | BackendResult
-      | undefined;
+      BackendResult | undefined;
     if (!response) {
       return {
         ok: false,
@@ -62,7 +96,12 @@ export async function sendBackendRequest<T>(
   try {
     const result = await Promise.race([deliver(request), deadline]);
     if (!result.ok) {
-      throw new BackendRequestError(result.kind, result.status, result.detail);
+      throw new BackendRequestError(
+        result.kind,
+        result.status,
+        result.detail,
+        result.retryAfterMs,
+      );
     }
     return result.body as T;
   } finally {

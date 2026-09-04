@@ -12,6 +12,8 @@ from blade_detection.evaluation import (
     load_corpus,
     render,
 )
+from blade_detection.evaluation.taxonomy import CANONICAL_TYPES
+from blade_detection.rules import BUILTIN_RULES
 
 CORPUS_DIR = Path(__file__).parents[1] / "corpus"
 BASELINE_PATH = Path(__file__).parents[1] / "accuracy_baseline.json"
@@ -37,3 +39,10 @@ def test_no_accuracy_regression(report: EvaluationReport) -> None:
         + "\n\n"
         + render(report)
     )
+
+
+def test_every_builtin_rule_emits_a_canonical_type() -> None:
+    for rule in BUILTIN_RULES:
+        assert rule.entity_type in CANONICAL_TYPES, (
+            f"{rule.name} emits {rule.entity_type}, which the corpus taxonomy does not know"
+        )

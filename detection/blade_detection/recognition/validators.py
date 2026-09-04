@@ -3,7 +3,10 @@ from __future__ import annotations
 import itertools
 import re
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Final
+
+from blade_detection.recognition.reference_data import IFSC_BANK_CODES, WHO_ICD10_CATEGORIES
 
 _VERHOEFF_D: Final[tuple[tuple[int, ...], ...]] = (
     (0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
@@ -117,6 +120,13 @@ def validate_ifsc(value: str) -> bool:
     return bool(_IFSC_RE.match(value.strip().upper()))
 
 
+def validate_ifsc_known_bank(value: str) -> bool:
+    ifsc = value.strip().upper()
+    if not _IFSC_RE.match(ifsc):
+        return False
+    return ifsc[:4] in IFSC_BANK_CODES
+
+
 _PASSPORT_RE: Final[re.Pattern[str]] = re.compile(r"^[A-PR-WY][0-9]{7}$")
 
 
@@ -124,7 +134,6 @@ def validate_passport(value: str) -> bool:
     return bool(_PASSPORT_RE.match(value.strip().upper()))
 
 
-_DL_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Z]{2}[\s-]?[0-9]{2}[\s-]?[0-9]{4}[0-9]{7}$")
 _STATE_CODES: Final[frozenset[str]] = frozenset(
     {
         "AN",
@@ -183,12 +192,29 @@ def validate_voter_id(value: str) -> bool:
     return bool(_VOTER_RE.match(value.strip().upper()))
 
 
-def validate_icd10(value: str) -> bool:
+_ICD10_SUBCODE_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9][0-9A-Z]{0,3}$")
+
+
+@lru_cache(maxsize=1)
+def icd10_categories() -> frozenset[str]:
     try:
         import simple_icd_10_cm as icd
     except ImportError:  # pragma: no cover - dependency is declared
+        return WHO_ICD10_CATEGORIES
+    clinical_modification = {
+        code for code in icd.get_all_codes(with_dots=False) if len(code) == 3 and code[0].isalpha()
+    }
+    return frozenset(clinical_modification | WHO_ICD10_CATEGORIES)
+
+
+def validate_icd10(value: str) -> bool:
+    code = value.strip().upper()
+    category, dot, subcode = code.partition(".")
+    if category not in icd10_categories():
         return False
-    return bool(icd.is_valid_item(value.strip().upper()))
+    if not dot:
+        return True
+    return bool(_ICD10_SUBCODE_RE.match(subcode))
 
 
 def validate_in_phone(value: str) -> bool:
@@ -233,11 +259,15 @@ VALIDATORS: Final[dict[str, Callable[[str], bool]]] = {
     "gstin": validate_gstin,
     "icd10": validate_icd10,
     "ifsc": validate_ifsc,
+    "ifsc_known_bank": validate_ifsc_known_bank,
     "in_phone": validate_in_phone,
     "pan": validate_pan,
     "passport": validate_passport,
     "voter_id": validate_voter_id,
 }
+
+
+CHECKSUM_VALIDATORS: Final[frozenset[str]] = frozenset({"aadhaar", "gstin"})
 
 
 def get_validator(name: str | None) -> Callable[[str], bool]:

@@ -63,8 +63,18 @@ async def update_current_org(
     org = await session.get(Organization, member.org_id)
     if org is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="organization missing")
+    previous_name = org.name
     if payload.name is not None:
         org.name = payload.name.strip()
+    if org.name != previous_name:
+        await write_audit_event(
+            session,
+            org_id=member.org_id,
+            actor=f"member:{member.email}",
+            category="org",
+            action="org_renamed",
+            metadata={"from_name": previous_name, "to_name": org.name},
+        )
     await session.commit()
     await session.refresh(org)
     return _serialize(org, member.role)

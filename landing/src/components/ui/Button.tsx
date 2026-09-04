@@ -2,10 +2,19 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { APP_URL } from "@/lib/links";
 
+export type ButtonVariant =
+  | "primary"
+  | "outline"
+  | "bare"
+  | "navcta"
+  | "ghost";
+
+export type ButtonSize = "lg" | "md" | "sm" | "nav" | "navsm";
+
 type Props = {
   href: string;
-  variant?: "primary" | "outline" | "bare" | "navcta" | "ghost";
-  size?: "lg" | "md" | "sm" | "nav" | "navsm";
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   className?: string;
   children: ReactNode;
 };

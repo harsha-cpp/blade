@@ -42,13 +42,16 @@ blade_backend/
   quarantine/        quarantine list, detail, approve, reject, status polling
   events/            scan-event ingestion and analytics
   audit/             append-only audit log, hash chain, chain verification
-  tasks/             Celery app and the queued attachment-scan task
+  tasks/             Celery app, the queued attachment-scan task, and the daily
+                     expired-credential purge
   storage/           S3-compatible object storage for queued attachment bytes
   email/             SMTP and console mailers, message templates
-  public/            unauthenticated endpoints for the extension
+  public/            unauthenticated endpoints: extension config, the marketing
+                     site's access-request form, and the open-signup flag
+  access_requests/   platform-operator triage of marketing access requests
   db/                SQLAlchemy 2.0 Base, async session, models, Alembic
   observability/     structlog, security and rate-limit middleware
-  utils/             uuid and masking helpers
+  utils/             uuid7 helper
 ```
 
 ## Two ingest channels

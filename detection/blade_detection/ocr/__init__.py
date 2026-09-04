@@ -8,9 +8,10 @@ import structlog
 from PIL import Image
 
 from blade_detection.config import DetectionConfig
+from blade_detection.extractors.issues import ExtractionIssue
 from blade_detection.ocr import paddle_backend, tesseract_backend
 from blade_detection.ocr.preprocess import prepare
-from blade_detection.ocr.tesseract_backend import OcrUnavailableError
+from blade_detection.ocr.tesseract_backend import OcrPageTimeoutError, OcrUnavailableError
 
 logger = structlog.get_logger(__name__)
 
@@ -82,9 +83,14 @@ def extract_text(
     for image in images:
         if deadline is not None and monotonic() >= deadline:
             logger.warning("OCR document deadline reached", pages_done=pages)
+            errors.append(str(ExtractionIssue.OCR_DEADLINE_REACHED))
             break
         try:
             text, confidence = extract_image_text(image, config, deadline=deadline)
+        except OcrPageTimeoutError as exc:
+            logger.warning("OCR page timed out", pages_done=pages, error=str(exc))
+            errors.append(str(ExtractionIssue.OCR_PAGE_TIMEOUT))
+            continue
         except OcrUnavailableError as exc:
             logger.error("OCR engine unavailable", error=str(exc))
             errors.append(f"ocr unavailable: {exc}")
@@ -101,6 +107,15 @@ def extract_text(
     return OcrResult("\n".join(texts), round(mean_confidence, 3), pages, errors)
 
 
+PAGE_TIMEOUT_MESSAGE = "tesseract timed out and no fallback engine read the page"
+
+
+def _wants_fallback(config: DetectionConfig, confidence: float) -> bool:
+    return confidence < config.ocr.fallback_confidence_threshold or (
+        config.ocr.use_paddle_for_indic and wants_indic(config)
+    )
+
+
 def extract_image_text(
     image: Image.Image,
     config: DetectionConfig,
@@ -113,17 +128,23 @@ def extract_image_text(
         return "", 0.0
 
     prepared = prepare(image)
-    text, confidence = tesseract_backend.run(prepared, config)
+    timed_out = False
+    try:
+        text, confidence = tesseract_backend.run(prepared, config)
+    except OcrPageTimeoutError:
+        timed_out = True
+        text, confidence = "", 0.0
 
-    should_fallback = confidence < config.ocr.fallback_confidence_threshold or (
-        config.ocr.use_paddle_for_indic and wants_indic(config)
-    )
-    if not should_fallback:
+    if not timed_out and not _wants_fallback(config, confidence):
         return text, confidence
     if deadline is not None and monotonic() >= deadline:
+        if timed_out:
+            raise OcrPageTimeoutError(PAGE_TIMEOUT_MESSAGE)
         return text, confidence
 
     fallback_text, fallback_confidence = paddle_backend.run(prepared, config)
     if fallback_text and fallback_confidence >= confidence:
         return fallback_text, fallback_confidence
+    if timed_out:
+        raise OcrPageTimeoutError(PAGE_TIMEOUT_MESSAGE)
     return text, confidence

@@ -1,15 +1,15 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import AuthShell from "../components/AuthShell";
 import CopyButton from "../components/CopyButton";
 
 export default function OnboardingRoute() {
-  const { organization, member } = useAuth();
+  const { organization, member, status } = useAuth();
   const navigate = useNavigate();
 
-  if (!organization || !member) {
-    navigate("/login", { replace: true });
-    return null;
+  if (status === "loading" || status === "restoring") return null;
+  if (status !== "authenticated" || !organization || !member) {
+    return <Navigate to="/login" replace />;
   }
 
   const orgCode = organization.org_code;
@@ -62,8 +62,8 @@ export default function OnboardingRoute() {
 
       <div className="col gap-3" style={{ marginTop: 24 }}>
         <OnboardStep n={1} title="Install the Chrome extension">
-          Open Chrome, then load the unpacked extension from{" "}
-          <span className="mono">frontend/packages/extension/dist</span>.
+          Install the Blade extension from the Chrome Web Store, or load the
+          build your IT team provides.
         </OnboardStep>
         <OnboardStep n={2} title="Link the install">
           Click the Blade icon and paste{" "}

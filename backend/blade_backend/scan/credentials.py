@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, status
 from sqlalchemy import select
 
 from blade_backend.db.models import Organization
-from blade_backend.deps import DbSession, DevicePrincipal, current_device
+from blade_backend.deps import DbSession, current_device
 
 CredentialKind = Literal["device", "org_code"]
 
@@ -39,28 +39,6 @@ async def resolve_org_code(session: DbSession, org_code: str) -> Organization:
     if org is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="unknown org code")
     return org
-
-
-async def scan_principal(
-    session: DbSession,
-    x_blade_device_token: Annotated[str | None, Header()] = None,
-    x_blade_org_code: Annotated[str | None, Header()] = None,
-) -> ScanPrincipal:
-    if x_blade_device_token:
-        device: DevicePrincipal = await current_device(session, x_blade_device_token)
-        return ScanPrincipal(
-            org_id=device.org_id,
-            kind="device",
-            member_id=device.member_id,
-            email=device.email,
-        )
-    if x_blade_org_code:
-        org = await resolve_org_code(session, x_blade_org_code)
-        return ScanPrincipal(org_id=org.id, kind="org_code")
-    raise HTTPException(
-        status.HTTP_401_UNAUTHORIZED,
-        detail="missing device token or org code",
-    )
 
 
 async def principal_for_request(

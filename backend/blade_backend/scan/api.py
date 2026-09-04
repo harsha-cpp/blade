@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,6 +21,7 @@ from blade_backend.audit.service import write_audit_event
 from blade_backend.db.models import (
     ApprovedDomain,
     AttachmentScan,
+    DomainClass,
     EventAction,
     EventSeverity,
     Organization,
@@ -68,8 +69,18 @@ RecipientClass = Literal[
     "unknown",
 ]
 AttachmentStatus = Literal["scanned", "partial", "queued", "failed"]
-HIGH_RISK_QUARANTINE_SCORE = 80
-WARN_RISK_SCORE = 50
+
+_DOMAIN_CLASS_RANK: dict[DomainClass, int] = {"internal": 0, "partner": 1, "blocked": 2}
+_RECIPIENT_CLASS_FOR_DOMAIN: dict[DomainClass, RecipientClass] = {
+    "internal": "internal",
+    "partner": "approved_partner",
+    "blocked": "blocked",
+}
+_SENDER_CLASS_FOR_DOMAIN: dict[DomainClass, SenderClass] = {
+    "internal": "internal",
+    "partner": "approved_partner",
+    "blocked": "external",
+}
 UPLOAD_CHUNK_BYTES = 256 * 1024
 TIMED_OUT_ATTACHMENT_ERROR = "attachment scan timed out"
 UNREADABLE_ATTACHMENT_ERROR = "attachment could not be scanned"
@@ -80,18 +91,6 @@ _SEVERITY_RANK: dict[str, int] = {
     "medium": 2,
     "high": 3,
     "critical": 4,
-}
-_HIGH_RISK_ENTITY_TYPES = {
-    "IN_AADHAAR",
-    "IN_PAN",
-    "IN_PASSPORT",
-    "IN_DRIVING_LICENSE",
-    "IN_VOTER_ID",
-    "ABHA_NUMBER",
-    "ABHA_ADDRESS",
-    "MRN",
-    "PATIENT_VISIT_ID",
-    "BANK_ACCOUNT",
 }
 _PUBLIC_EMAIL_DOMAINS = {
     "gmail.com",
@@ -220,6 +219,7 @@ class MessageDetection:
     severity: EventSeverity
     risk_score: float
     unread_parts: int
+    masked_subject: str = ""
     entities: list[EntityHit] = field(default_factory=_empty_entity_hits)
 
 
@@ -259,6 +259,35 @@ def _domain_matches(candidate: str, configured: str) -> bool:
     return candidate == configured or candidate.endswith(f".{configured}")
 
 
+def _match_specificity(email: str, email_domain: str, configured: str) -> int | None:
+    if "@" in configured:
+        return len(configured) + 1 if email == configured else None
+    if email_domain and _domain_matches(email_domain, configured):
+        return len(configured)
+    return None
+
+
+def _most_specific_domain(
+    email: str,
+    email_domain: str,
+    domains: Sequence[ApprovedDomain],
+) -> DomainClass | None:
+    best: DomainClass | None = None
+    best_specificity = -1
+    best_rank = -1
+    for configured in domains:
+        specificity = _match_specificity(email, email_domain, configured.domain.lower())
+        if specificity is None:
+            continue
+        rank = _DOMAIN_CLASS_RANK[configured.classification]
+        if specificity < best_specificity:
+            continue
+        if specificity == best_specificity and rank <= best_rank:
+            continue
+        best, best_specificity, best_rank = configured.classification, specificity, rank
+    return best
+
+
 async def _classify_recipients(
     session: AsyncSession,
     org_id: UUID,
@@ -279,22 +308,9 @@ async def _classify_recipients(
         classification: RecipientClass = "unknown" if not recipient_domain else "external"
         if recipient_domain in _PUBLIC_EMAIL_DOMAINS:
             classification = "public_email"
-        for configured in domains:
-            configured_value = configured.domain.lower()
-            configured_match = (
-                email == configured_value
-                if "@" in configured_value
-                else _domain_matches(recipient_domain, configured_value)
-            )
-            if not configured_match:
-                continue
-            if configured.classification == "blocked":
-                classification = "blocked"
-                break
-            if configured.classification == "internal":
-                classification = "internal"
-            else:
-                classification = "approved_partner"
+        matched = _most_specific_domain(email, recipient_domain, domains)
+        if matched is not None:
+            classification = _RECIPIENT_CLASS_FOR_DOMAIN[matched]
         hits.append(RecipientHit(email=email, classification=classification))
     return hits
 
@@ -346,23 +362,10 @@ async def _classify_sender(
         )
     ).all()
 
-    classification: SenderClass = (
-        "public_email" if sender_domain in _PUBLIC_EMAIL_DOMAINS else "external"
-    )
-    for configured in domains:
-        configured_value = configured.domain.lower()
-        matched = (
-            address == configured_value
-            if "@" in configured_value
-            else _domain_matches(sender_domain, configured_value)
-        )
-        if not matched:
-            continue
-        if configured.classification == "internal":
-            return "internal"
-        if configured.classification == "partner":
-            classification = "approved_partner"
-    return classification
+    matched = _most_specific_domain(address, sender_domain, domains)
+    if matched is not None:
+        return _SENDER_CLASS_FOR_DOMAIN[matched]
+    return "public_email" if sender_domain in _PUBLIC_EMAIL_DOMAINS else "external"
 
 
 def _policy_decision(
@@ -528,13 +531,38 @@ async def _detect_message(subject: str, body: str, recipients: list[str]) -> Mes
         result = await scan_text(subject, body, recipients)
     except (DetectionTimeoutError, DetectionUnavailableError) as exc:
         logger.warning("message detection did not complete", reason=type(exc).__name__)
-        return MessageDetection(severity="none", risk_score=0, unread_parts=1, entities=[])
+        return MessageDetection(
+            severity="none",
+            risk_score=0,
+            unread_parts=1,
+            masked_subject=subject,
+            entities=[],
+        )
     return MessageDetection(
         severity=result.severity,
         risk_score=float(result.risk_score),
         unread_parts=0,
+        masked_subject=_mask_subject(subject, result.entities),
         entities=[_entity_hit(entity) for entity in result.entities],
     )
+
+
+def _mask_subject(subject: str, entities: list[DetectionEntity]) -> str:
+    spans = sorted(
+        (entity.start, entity.end, entity.masked_value)
+        for entity in entities
+        if entity.source == "subject" and entity.start is not None and entity.end is not None
+    )
+    masked: list[str] = []
+    cursor = 0
+    for start, end, replacement in spans:
+        if start < cursor or start >= end or end > len(subject):
+            continue
+        masked.append(subject[cursor:start])
+        masked.append(replacement)
+        cursor = end
+    masked.append(subject[cursor:])
+    return "".join(masked)
 
 
 async def _record_verdict(
@@ -544,7 +572,6 @@ async def _record_verdict(
     detection: MessageDetection,
     findings: list[AttachmentFinding],
     client_scan_id: str,
-    subject: str,
     user_email: str | None,
     audit_client_event_id: str,
     principal_actor: str,
@@ -592,7 +619,7 @@ async def _record_verdict(
             scan_event_id=event.id,
             client_scan_id=client_scan_id,
             sender=user_email or "unattributed",
-            subject=subject,
+            subject=detection.masked_subject,
             verdict=verdict,
             findings=findings,
         )
@@ -664,7 +691,6 @@ async def _scan_message(
         detection=detection,
         findings=findings,
         client_scan_id=client_scan_id,
-        subject=subject,
         user_email=user_email,
         audit_client_event_id=audit_client_event_id,
         principal_actor=principal.actor(claimed_email),
@@ -718,7 +744,15 @@ async def scan_email(
     session: DbSession,
     x_blade_device_token: Annotated[str | None, Header()] = None,
 ) -> Verdict:
-    """Scan a message body and record the verdict, releasing the database connection first."""
+    """Scan a message body and record the verdict, releasing the database connection first.
+
+    A quarantined message keeps its sender and recipient addresses in clear,
+    because a reviewer decides on the strength of who was about to receive
+    what. The subject is stored with every identifier the scan found in it
+    replaced by its mask, so the queue does not become a second copy of the
+    data it exists to hold back. Bodies and attachment contents are never
+    stored here at all.
+    """
     principal = await principal_for_request(session, payload.org_code, x_blade_device_token)
     enforce_scan_limit(principal)
     org_id = await _org_id_for(session, principal)
@@ -1073,7 +1107,12 @@ async def finalize_scan(
     session: DbSession,
     x_blade_device_token: Annotated[str | None, Header()] = None,
 ) -> Verdict:
-    """Combine attachment scans with a body scan and record the final verdict."""
+    """Combine attachment scans with a body scan and record the final verdict.
+
+    Quarantine rows are written with the same masking as `POST /scan/email`:
+    sender and recipients in clear for the reviewer, subject masked over every
+    identifier the scan found in it.
+    """
     principal = await principal_for_request(session, payload.org_code, x_blade_device_token)
     enforce_scan_limit(principal)
     org_id = await _org_id_for(session, principal)

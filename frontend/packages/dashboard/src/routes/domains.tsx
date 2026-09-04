@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   domainsApi,
@@ -46,7 +46,12 @@ export default function DomainsRoute() {
   });
   const remove = useMutation({
     mutationFn: domainsApi.remove,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["domains"] }),
+    onSuccess: () => {
+      setConfirmRemove(null);
+      return qc.invalidateQueries({ queryKey: ["domains"] });
+    },
+    onError: (err) =>
+      setRemoveError(errorMessage(err, "Could not remove that entry.")),
   });
 
   const [domain, setDomain] = useState("");
@@ -57,6 +62,24 @@ export default function DomainsRoute() {
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<ApprovedDomain | null>(
+    null,
+  );
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  function askRemove(entry: ApprovedDomain) {
+    setRemoveError(null);
+    setConfirmRemove(entry);
+  }
+
+  useEffect(() => {
+    if (!confirmRemove) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setConfirmRemove(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [confirmRemove]);
 
   const domainRows = (data ?? []).filter((d) => !d.domain.includes("@"));
   const emailRows = (data ?? []).filter((d) => d.domain.includes("@"));
@@ -236,7 +259,7 @@ export default function DomainsRoute() {
                     key={d.id}
                     domain={d}
                     onUpdate={(body) => update.mutate({ id: d.id, body })}
-                    onDelete={() => remove.mutate(d.id)}
+                    onDelete={() => askRemove(d)}
                     canEdit={canEdit}
                     canDelete={canDelete}
                     busy={update.isPending || remove.isPending}
@@ -321,7 +344,7 @@ export default function DomainsRoute() {
                         <button
                           type="button"
                           className="btn btn-danger btn-sm"
-                          onClick={() => remove.mutate(d.id)}
+                          onClick={() => askRemove(d)}
                           disabled={remove.isPending}
                         >
                           Remove
@@ -335,6 +358,56 @@ export default function DomainsRoute() {
           </div>
         )}
       </div>
+
+      {confirmRemove ? (
+        <div className="dialog-scrim" role="presentation">
+          <div
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-domain-title"
+          >
+            <h2 className="h2" id="remove-domain-title">
+              Remove this entry?
+            </h2>
+            <p className="muted">
+              <strong className="mono">{confirmRemove.domain}</strong> stops
+              counting as{" "}
+              {confirmRemove.classification === "blocked"
+                ? "blocked"
+                : "approved"}
+              . From the next scan on, the policy treats it as an unknown
+              outside address, which can change what senders are allowed to do.
+            </p>
+            {removeError && (
+              <div className="error" style={{ marginTop: 12 }}>
+                {removeError}
+              </div>
+            )}
+            <div
+              className="row gap-2"
+              style={{ marginTop: 18, justifyContent: "flex-end" }}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setConfirmRemove(null)}
+                disabled={remove.isPending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => remove.mutate(confirmRemove.id)}
+                disabled={remove.isPending}
+              >
+                {remove.isPending ? "Removing..." : "Remove entry"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
