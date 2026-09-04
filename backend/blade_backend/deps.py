@@ -25,6 +25,7 @@ from blade_backend.db.session import get_session
 from blade_backend.settings import get_settings
 
 _DEVICE_LAST_SEEN_INTERVAL = timedelta(minutes=5)
+_NOT_A_PLATFORM_OPERATOR = "not a platform operator"
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,10 +174,18 @@ DomainEditor = Annotated[Principal, Depends(require_role("owner", "admin", "anal
 QuarantineReviewer = Annotated[Principal, Depends(require_role("owner", "admin", "analyst"))]
 
 
-async def platform_admin(member: CurrentMember) -> Principal:
+async def platform_admin(member: CurrentMember, session: DbSession) -> Principal:
     operators = get_settings().platform_admin_email_set
     if member.role != "owner" or member.email.strip().lower() not in operators:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not a platform operator")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_NOT_A_PLATFORM_OPERATOR)
+    verified_at = await session.scalar(
+        select(OrgMember.email_verified_at).where(
+            OrgMember.id == member.member_id,
+            OrgMember.org_id == member.org_id,
+        )
+    )
+    if verified_at is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=_NOT_A_PLATFORM_OPERATOR)
     return member
 
 

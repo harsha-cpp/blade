@@ -11,6 +11,11 @@ const FILLERS: readonly (readonly [string, string])[] = [
   ["tabs", "\t"],
 ];
 
+const CONTEXT_TERM_LINE =
+  "patient aadhaar uidai invoice account policy claim uhid mrn icd bank ";
+const CONTEXT_TERM_FLOOD_REPEATS = 3000;
+const MAX_CONTEXT_FLOOD_MS = 200;
+
 const FIXED_PREFIXES: readonly string[] = [
   "patient",
   "policy",
@@ -111,6 +116,35 @@ function slowestSearchMs(
   return { label, elapsed };
 }
 
+const DENSE_DOCUMENT_BYTES = 400_000;
+const MAX_DENSE_DOCUMENT_MS = 400;
+
+const DENSE_LINE =
+  "UHID {n} MRN: MH-2024-{m} Aadhaar 7534 7930 7460 IP No: IP-2024-{m} " +
+  "Dr Ravi Kumar E11.9 Policy No. HDFC/2024/{p} Specimen No: LAB2024{s} " +
+  "9845012345 account 918273645509 patient Claim No CLM/2024/{p} " +
+  "Patient ID: PT-2024-{m} Visit No: OP-2024-{m} E11.9 diagnosis\n";
+
+function padded(value: number, width: number): string {
+  return String(value % 10 ** width).padStart(width, "0");
+}
+
+function denseIdentifierDocument(targetBytes: number): string {
+  const lines: string[] = [];
+  let size = 0;
+  let index = 0;
+  while (size < targetBytes) {
+    const line = DENSE_LINE.replaceAll("{n}", padded(index, 7))
+      .replaceAll("{m}", padded(index, 4))
+      .replaceAll("{p}", padded(index, 6))
+      .replaceAll("{s}", padded(index, 3));
+    lines.push(line);
+    size += line.length;
+    index += 1;
+  }
+  return lines.join("");
+}
+
 interface PatternCase {
   name: string;
   pattern: string;
@@ -160,6 +194,43 @@ describe("rule pack matcher latency", () => {
           `detect on "${prefix}" + ${FILLER_LENGTH} ${fillerName} took ${elapsed.toFixed(1)} ms`,
         ).toBeLessThan(MAX_SEARCH_MS);
       }
+    }
+  });
+
+  it("keeps a dense identifier body inside the overlap resolution budget", () => {
+    const text = denseIdentifierDocument(DENSE_DOCUMENT_BYTES);
+    detect(text.slice(0, 2000));
+    const started = performance.now();
+    const found = detect(text);
+    const elapsed = performance.now() - started;
+    expect(found.length).toBeGreaterThan(1000);
+    expect(
+      elapsed,
+      `detect on a ${text.length} byte identifier dense body took ${elapsed.toFixed(1)} ms`,
+    ).toBeLessThan(MAX_DENSE_DOCUMENT_MS);
+  });
+
+  it("keeps a full detect pass under the budget on flooded context terms", () => {
+    const flood = CONTEXT_TERM_LINE.repeat(CONTEXT_TERM_FLOOD_REPEATS);
+    detect(CONTEXT_TERM_LINE);
+    for (const [label, text] of [
+      ["terms only", flood],
+      ["terms then an identifier", `${flood} Aadhaar 7534 7930 7460 issued.`],
+      ["an identifier then terms", `Aadhaar 7534 7930 7460 issued. ${flood}`],
+    ] as const) {
+      const started = performance.now();
+      const found = detect(text);
+      const elapsed = performance.now() - started;
+      if (label !== "terms only") {
+        expect(
+          found.some((entity) => entity.type === "IN_AADHAAR"),
+          `no aadhaar found with ${label}`,
+        ).toBe(true);
+      }
+      expect(
+        elapsed,
+        `detect on ${label} (${text.length} bytes) took ${elapsed.toFixed(1)} ms`,
+      ).toBeLessThan(MAX_CONTEXT_FLOOD_MS);
     }
   });
 

@@ -43,7 +43,7 @@ export function scorePhi(entities: PhiHit[]): {
       value_hash: hit.value_hash,
       confidence: hit.confidence,
       source: hit.source,
-      attachment_id: hit.attachment_id,
+      attachment_id: hit.attachment_id ?? undefined,
       start: 0,
       end: 0,
     })),

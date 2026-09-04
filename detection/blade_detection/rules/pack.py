@@ -83,6 +83,20 @@ _COMMERCIAL_NEGATIVE: Final[list[str]] = [
     "tender",
 ]
 
+_AADHAAR_COMMERCIAL_NEGATIVE: Final[list[str]] = [
+    "invoice",
+    "purchase order",
+    "po",
+    "transaction",
+    "transaction id",
+    "vendor",
+    "gst",
+    "gstin",
+    "budget",
+    "placeholder",
+    "staging",
+]
+
 _ABHA_CONTEXT: Final[list[str]] = [
     "abha",
     "abdm",
@@ -232,8 +246,10 @@ BUILTIN_RULES: Final[list[Rule]] = [
         base_confidence=0.8,
         validator="aadhaar",
         context_terms=_AADHAAR_CONTEXT,
-        negative_terms=["invoice", "transaction", "reference", "budget", "placeholder", "staging"],
-        negative_penalty=0.25,
+        negative_terms=_AADHAAR_COMMERCIAL_NEGATIVE,
+        weak_negative_terms=["reference"],
+        negative_penalty=0.45,
+        weak_negative_penalty=0.25,
         priority=50,
     ),
     _rule(

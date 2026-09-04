@@ -82,6 +82,11 @@ class _TextCollector(HTMLParser):
             return
         self._chunks.append(data)
 
+    def handle_comment(self, data: str) -> None:
+        if self._skipped_depth:
+            return
+        self._chunks.append(f" {data} ")
+
     def collected(self) -> str:
         return "".join(self._chunks)
 

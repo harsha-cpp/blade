@@ -19,6 +19,8 @@ MFA_MAX_ATTEMPTS = 5
 ACCESS_REQUEST_PER_HOUR = 5
 ACCESS_REQUEST_PER_DAY = 20
 
+FAILED_LOGIN_AUDIT_WINDOW_SECONDS = 60
+
 _MINUTE_SECONDS = 60
 _HOUR_SECONDS = 3600
 _DAY_SECONDS = 86_400
@@ -90,6 +92,20 @@ class _BoundedCounters:
         counter = self._live(key)
         return counter.hits if counter is not None else 0
 
+    def mirror(self, key: str, hits: int, ttl_seconds: int) -> int:
+        if hits <= 0:
+            self._counters.pop(key, None)
+            return 0
+        counter = self._live(key)
+        if counter is None:
+            self._counters[key] = _Counter(expires_at=time.monotonic() + ttl_seconds, hits=hits)
+        else:
+            counter.hits = hits
+        self._counters.move_to_end(key)
+        while len(self._counters) > self._max_keys:
+            self._counters.popitem(last=False)
+        return hits
+
     def discard(self, key: str) -> None:
         self._counters.pop(key, None)
 
@@ -114,7 +130,7 @@ class LoginRateLimiter:
     async def check(self, request: Request, email: str) -> LoginLimitResult:
         settings = get_settings()
         client = resolve_client_ip(request, settings.trusted_proxy_count)
-        identity = email.lower()
+        identity = email.strip().lower()
         budgets = (
             _Budget(_digest(f"pair:{client}:{identity}"), 1),
             _Budget(_digest(f"ip:{client}"), _IP_BUDGET_FACTOR),
@@ -179,6 +195,34 @@ class LoginRateLimiter:
             lockout.append(now)
         return LoginLimitResult(False, _retry_after(bucket, now, window_seconds), audit_due)
 
+    async def claim_failure_audit(self, request: Request, email: str) -> bool:
+        settings = get_settings()
+        client = resolve_client_ip(request, settings.trusted_proxy_count)
+        key = _digest(f"pair:{client}:{email.strip().lower()}")
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                claimed = await redis.set(
+                    f"loginfail:{key}",
+                    "1",
+                    ex=FAILED_LOGIN_AUDIT_WINDOW_SECONDS,
+                    nx=True,
+                )
+            except Exception:
+                self._redis.drop()
+            else:
+                return bool(claimed)
+        return self._claim_memory(f"loginfail:{key}")
+
+    def _claim_memory(self, key: str) -> bool:
+        now = time.monotonic()
+        claims = self._buckets.bucket(key)
+        _prune(claims, now, FAILED_LOGIN_AUDIT_WINDOW_SECONDS)
+        if claims:
+            return False
+        claims.append(now)
+        return True
+
     def tracked_keys(self) -> int:
         return self._buckets.tracked_keys()
 
@@ -207,9 +251,11 @@ class MfaChallengeGuard:
         redis = await self._redis.client()
         if redis is not None:
             try:
-                return await hit_counter(redis, key, CHALLENGE_TTL_SECONDS)
+                hits = await hit_counter(redis, key, CHALLENGE_TTL_SECONDS)
             except Exception:
                 self._redis.drop()
+            else:
+                return self._counters.mirror(key, hits, CHALLENGE_TTL_SECONDS)
         return self._counters.increment(key, CHALLENGE_TTL_SECONDS)
 
     async def _hits(self, key: str) -> int:
@@ -217,9 +263,14 @@ class MfaChallengeGuard:
         if redis is not None:
             try:
                 stored = await redis.get(key)
-                return int(stored) if stored is not None else 0
             except Exception:
                 self._redis.drop()
+            else:
+                return self._counters.mirror(
+                    key,
+                    int(stored) if stored is not None else 0,
+                    CHALLENGE_TTL_SECONDS,
+                )
         return self._counters.hits(key)
 
     async def _discard(self, key: str) -> None:
@@ -227,7 +278,6 @@ class MfaChallengeGuard:
         if redis is not None:
             try:
                 await redis.delete(key)
-                return
             except Exception:
                 self._redis.drop()
         self._counters.discard(key)

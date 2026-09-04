@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ComposeReadError,
+  countAttachmentChips,
   extractAttachmentRefs,
   extractComposeData,
   extractDriveLinks,
+  findComposeBody,
   isDriveUrl,
   scanUntilStable,
 } from "./compose";
@@ -36,6 +39,29 @@ describe("compose extraction", () => {
     expect(data.subject).toBe("Discharge summary");
     expect(data.body).toContain("Please review the notes.");
     expect(data.recipients).toEqual(["doc@hospital.org"]);
+  });
+
+  it("strips display names and non-addresses off recipients", () => {
+    const compose = composeFixture();
+    const to = compose.querySelector<HTMLInputElement>('input[name="to"]');
+    if (to) to.value = '"Dr Rao" <rao@hospital.in>, ward-3, NURSE@Hospital.IN';
+
+    expect(extractComposeData(compose, []).recipients).toEqual([
+      "rao@hospital.in",
+      "nurse@hospital.in",
+    ]);
+  });
+
+  it("strips a display name off a recipient chip too", () => {
+    const compose = composeFixture(
+      '<span email="&quot;Dr Rao&quot; <rao@hospital.in>"></span>',
+    );
+    const to = compose.querySelector<HTMLInputElement>('input[name="to"]');
+    if (to) to.value = "";
+
+    expect(extractComposeData(compose, []).recipients).toEqual([
+      "rao@hospital.in",
+    ]);
   });
 
   it("keeps the fingerprint stable while the draft is untouched", () => {
@@ -101,6 +127,33 @@ describe("compose extraction", () => {
     expect(extractComposeData(compose, []).fingerprint).not.toBe(before);
   });
 
+  it("changes the fingerprint for a chip whose url it cannot read", () => {
+    const compose = composeFixture();
+    const before = extractComposeData(compose, []).fingerprint;
+    const chip = document.createElement("div");
+    chip.setAttribute("aria-label", "Attachment: labs.pdf");
+    compose.append(chip);
+
+    expect(countAttachmentChips(compose)).toBe(1);
+    expect(extractComposeData(compose, []).fingerprint).not.toBe(before);
+  });
+
+  it("does not count the attach button as an attachment", () => {
+    const compose = composeFixture(
+      '<div role="button" aria-label="Attach files"></div>',
+    );
+
+    expect(countAttachmentChips(compose)).toBe(0);
+  });
+
+  it("counts a chip once even when its parts both look like one", () => {
+    const compose = composeFixture(
+      '<span download_url="application/pdf:labs.pdf:https://mail.google.com/x"><a href="https://mail.google.com/?view=att&id=1">labs.pdf</a></span>',
+    );
+
+    expect(countAttachmentChips(compose)).toBe(1);
+  });
+
   it("ignores attachments quoted from an earlier message", () => {
     const compose = composeFixture(
       '<blockquote class="gmail_quote"><span download_url="application/pdf:old.pdf:https://mail.google.com/old"></span></blockquote>',
@@ -120,6 +173,82 @@ describe("compose extraction", () => {
   });
 });
 
+describe("a draft Blade cannot read", () => {
+  function shell(inner: string): HTMLElement {
+    const compose = document.createElement("div");
+    compose.innerHTML = inner;
+    document.body.append(compose);
+    return compose;
+  }
+
+  it("refuses to scan a compose with no message body", () => {
+    const compose = shell('<input name="subjectbox" value="Discharge" />');
+
+    expect(() => extractComposeData(compose, [])).toThrow(ComposeReadError);
+  });
+
+  it("scans a compose with no subject field as an empty subject", () => {
+    const compose = shell(
+      '<div role="textbox" aria-label="Message Body">notes</div>',
+    );
+    const data = extractComposeData(compose, []);
+    expect(data.subject).toBe("");
+  });
+  it("never reports an unreadable draft as an empty one", () => {
+    const compose = shell('<input name="subjectbox" value="" />');
+    const read = (): string => extractComposeData(compose, []).body;
+
+    expect(read).toThrow(ComposeReadError);
+  });
+});
+
+describe("finding the message body structurally", () => {
+  function shell(inner: string): HTMLElement {
+    const compose = document.createElement("div");
+    compose.innerHTML = inner;
+    document.body.append(compose);
+    return compose;
+  }
+
+  it("finds an editable textbox whose label is not English", () => {
+    const compose = shell(
+      [
+        '<input name="subjectbox" value="Vishay" />',
+        '<div role="textbox" contenteditable="true" aria-label="Sandesh ka mukhya bhaag">Aadhaar 7534 7930 7460</div>',
+      ].join(""),
+    );
+
+    expect(findComposeBody(compose)?.getAttribute("aria-label")).toBe(
+      "Sandesh ka mukhya bhaag",
+    );
+    expect(extractComposeData(compose, []).body).toContain("7534");
+  });
+
+  it("does not mistake the recipient combobox for the body", () => {
+    const compose = shell(
+      [
+        '<input name="subjectbox" value="Vishay" />',
+        '<div role="combobox"><div role="textbox" contenteditable="true">rao@hospital.in</div></div>',
+        '<div role="textbox" contenteditable="true" aria-label="Sandesh">notes</div>',
+      ].join(""),
+    );
+
+    expect(findComposeBody(compose)?.textContent).toBe("notes");
+  });
+
+  it("prefers the labelled body when Gmail marks it", () => {
+    const compose = shell(
+      [
+        '<input name="subjectbox" value="Vishay" />',
+        '<div role="textbox" contenteditable="true">first</div>',
+        '<div role="textbox" g_editable="true" contenteditable="true">real</div>',
+      ].join(""),
+    );
+
+    expect(findComposeBody(compose)?.textContent).toBe("real");
+  });
+});
+
 describe("Google Drive chips", () => {
   const DRIVE_CHIP =
     '<a href="https://drive.google.com/file/d/1a2b3c/view?usp=drive_link">Discharge summary.pdf</a>';
@@ -130,6 +259,14 @@ describe("Google Drive chips", () => {
     expect(data.driveLinks).toEqual([
       "https://drive.google.com/file/d/1a2b3c/view?usp=drive_link",
     ]);
+  });
+
+  it("does not count a Drive link in the user's signature", () => {
+    const compose = composeFixture(
+      '<div class="gmail_signature"><a href="https://drive.google.com/file/d/sig/view">My CV</a></div>',
+    );
+
+    expect(extractDriveLinks(compose)).toEqual([]);
   });
 
   it("counts a Google Docs chip too", () => {

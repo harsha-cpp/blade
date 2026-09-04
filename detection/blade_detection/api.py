@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections import defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
@@ -14,6 +15,8 @@ from blade_detection.ocr import extract_text as extract_ocr_text
 from blade_detection.recognition import analyze
 from blade_detection.rules.schema import RulePack
 from blade_detection.scoring import score
+
+MAX_ENTITIES_PER_TYPE = 200
 
 
 def detect_email(
@@ -70,7 +73,8 @@ def detect_email(
 
     risk_score, severity = score(entities)
     return ScanResult(
-        entities=entities,
+        entities=top_entities_per_type(entities, MAX_ENTITIES_PER_TYPE),
+        entity_count=len(entities),
         severity=severity,
         risk_score=risk_score,
         duration_ms=max(0, round((time.perf_counter() - started) * 1000)),
@@ -78,6 +82,21 @@ def detect_email(
         extraction_errors=extraction_errors,
         completed_at=datetime.now(UTC),
     )
+
+
+def top_entities_per_type(entities: list[Entity], limit: int) -> list[Entity]:
+    positions_by_type: dict[str, list[int]] = defaultdict(list)
+    for position, entity in enumerate(entities):
+        positions_by_type[entity.type].append(position)
+
+    kept: set[int] = set()
+    for positions in positions_by_type.values():
+        if len(positions) <= limit:
+            kept.update(positions)
+            continue
+        ranked = sorted(positions, key=lambda position: (-entities[position].confidence, position))
+        kept.update(ranked[:limit])
+    return [entity for position, entity in enumerate(entities) if position in kept]
 
 
 def _loaded_images(

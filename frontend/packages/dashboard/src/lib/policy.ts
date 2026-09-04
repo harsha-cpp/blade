@@ -26,6 +26,25 @@ export function seedDraft(rules: PolicyRule[]): DraftRule[] {
   return renumber(rules.map((rule) => ({ ...rule, key: nextDraftKey() })));
 }
 
+export function reseedDraft(
+  previous: DraftRule[],
+  rules: PolicyRule[],
+): DraftRule[] {
+  const keysById = new Map<string, string[]>();
+  for (const rule of previous) {
+    const taken = keysById.get(rule.id);
+    if (taken) taken.push(rule.key);
+    else keysById.set(rule.id, [rule.key]);
+  }
+
+  return renumber(
+    rules.map((rule) => ({
+      ...rule,
+      key: keysById.get(rule.id)?.shift() ?? nextDraftKey(),
+    })),
+  );
+}
+
 export function stripDraftKeys(rules: PolicyRule[]): PolicyRule[] {
   return rules.map((rule) => {
     const { key: _key, ...rest } = rule as PolicyRule & { key?: string };
@@ -134,7 +153,7 @@ export function validateRules(rules: PolicyRule[]): string[] {
       "Every rule is disabled - nothing would ever match and every send would be allowed.",
     );
   }
-  return problems;
+  return Array.from(new Set(problems));
 }
 
 export function toPolicySetIn(
@@ -215,10 +234,10 @@ export function describeConditions(conditions: RuleConditions): string[] {
     out.push(
       `at least ${min_unscanned_attachments} attachment${min_unscanned_attachments === 1 ? "" : "s"} could not be checked`,
     );
-  if (min_risk_score != null) out.push(`risk ≥ ${min_risk_score}`);
-  if (max_risk_score != null) out.push(`risk ≤ ${max_risk_score}`);
+  if (min_risk_score != null) out.push(`risk at least ${min_risk_score}`);
+  if (max_risk_score != null) out.push(`risk at most ${max_risk_score}`);
   if (min_severity)
-    out.push(`severity ≥ ${severityLabel(min_severity as Severity)}`);
+    out.push(`severity at least ${severityLabel(min_severity as Severity)}`);
   if (recipient_class_any?.length) {
     out.push(
       `any recipient is ${recipient_class_any.map((c) => CLASS_LABELS[c]).join(" / ")}`,

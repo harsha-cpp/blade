@@ -15,7 +15,6 @@ from blade_detection.recognition.ner import (
 from blade_detection.recognition.pattern_safety import is_safe_pattern
 from blade_detection.recognition.patterns import RawMatch, apply_rules
 from blade_detection.recognition.resolution import resolve_overlaps
-from blade_detection.rules import BUILTIN_RULE_PACK
 from blade_detection.rules.schema import Rule, RulePack
 
 __all__ = [
@@ -24,6 +23,12 @@ __all__ = [
     "analyze",
     "custom_mrn_rules",
 ]
+
+
+def _builtin_rule_pack() -> RulePack:
+    from blade_detection.rules import BUILTIN_RULE_PACK
+
+    return BUILTIN_RULE_PACK
 
 
 def _enabled_types(config: DetectionConfig) -> frozenset[str] | None:
@@ -42,7 +47,7 @@ def _enabled_types(config: DetectionConfig) -> frozenset[str] | None:
     if not disabled:
         return None
     return frozenset(
-        rule.entity_type for rule in BUILTIN_RULE_PACK.rules if rule.entity_type not in disabled
+        rule.entity_type for rule in _builtin_rule_pack().rules if rule.entity_type not in disabled
     )
 
 
@@ -78,7 +83,7 @@ def analyze(
     if not text.strip():
         return []
 
-    pack = rule_pack or BUILTIN_RULE_PACK
+    pack = rule_pack or _builtin_rule_pack()
     rules = pack.for_types(_enabled_types(config)) + custom_mrn_rules(config)
     folded = fold(text)
     matches = [_in_source_text(match, folded) for match in apply_rules(rules, folded.text)]

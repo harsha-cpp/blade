@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  classifyScheduleDialogAction,
   classifySendElement,
   findSendControl,
   findSendControlTrigger,
@@ -7,6 +8,7 @@ import {
   isActivationKey,
   isSendShortcut,
   isTextEntryTarget,
+  resolveComposeButtonActivation,
   resolveSendShortcut,
   triggerLabel,
 } from "./send-paths";
@@ -258,6 +260,21 @@ describe("the localized label table", () => {
       }
     });
 
+    it(`ignores the ${set.language} date picker navigation`, () => {
+      for (const label of set.scheduleNavigation) {
+        const dialog = el(
+          '<div role="dialog" aria-label="' +
+            attribute(set.scheduleSend[0] ?? "schedule send") +
+            '">' +
+            `<div role="button" id="nav" aria-label="${attribute(label)}"></div>` +
+            "</div>",
+        );
+        expect(
+          classifyScheduleDialogAction(dialog.querySelector("#nav") as Element),
+        ).toBeNull();
+      }
+    });
+
     it(`finds the ${set.language} send button inside a compose window`, () => {
       const label = set.send[0] ?? "";
       const compose = el(
@@ -385,5 +402,117 @@ describe("the keyboard shortcut inside an instrumented compose", () => {
 
   it("stays out of the way when the keystroke is not in a compose", () => {
     expect(resolveSendShortcut(null).kind).toBe("ignore");
+  });
+});
+
+describe("the schedule send dialog", () => {
+  const scheduleDialog = (inner: string): HTMLElement =>
+    el('<div role="dialog" aria-label="Schedule send">' + inner + "</div>");
+
+  it("treats the confirm button as a send", () => {
+    const dialog = scheduleDialog(
+      '<div role="button" id="confirm" aria-label="Schedule send"></div>',
+    );
+
+    expect(
+      classifyScheduleDialogAction(dialog.querySelector("#confirm") as Element),
+    ).toBe("schedule-confirm");
+  });
+
+  it("leaves a day cell in the date grid alone", () => {
+    const dialog = scheduleDialog(
+      '<div role="grid"><div role="gridcell"><div role="button" id="day" aria-label="14"></div></div></div>',
+    );
+
+    expect(
+      classifyScheduleDialogAction(dialog.querySelector("#day") as Element),
+    ).toBeNull();
+  });
+
+  it("leaves a time option in the listbox alone", () => {
+    const dialog = scheduleDialog(
+      '<div role="listbox"><div role="option" id="slot" aria-label="8:00 AM"></div></div>',
+    );
+
+    expect(
+      classifyScheduleDialogAction(dialog.querySelector("#slot") as Element),
+    ).toBeNull();
+  });
+
+  it("ignores a dialog that is not about scheduling", () => {
+    const dialog = el(
+      '<div role="dialog" aria-label="Confirm recipients"><div role="button" id="ok" aria-label="OK"></div></div>',
+    );
+
+    expect(
+      classifyScheduleDialogAction(dialog.querySelector("#ok") as Element),
+    ).toBeNull();
+  });
+});
+
+describe("resolving a plain button click inside a compose", () => {
+  const compose = (footer: string): HTMLElement =>
+    el(
+      '<div role="dialog">' +
+        '<input name="subjectbox" />' +
+        '<div role="textbox" aria-label="Message Body"></div>' +
+        '<div class="footer">' +
+        footer +
+        "</div>" +
+        "</div>",
+    );
+
+  const identifiable =
+    '<div class="group">' +
+    '<div role="button" id="send" jslog="3" data-tooltip="Send"></div>' +
+    '<div role="button" id="arrow" aria-haspopup="true"></div>' +
+    "</div>" +
+    '<div role="button" id="discard" aria-label="Discard draft"></div>';
+
+  const unidentifiable = ["a", "b", "c", "d", "e"]
+    .map((id) => `<div role="button" id="${id}" aria-label="Zeta ${id}"></div>`)
+    .join("");
+
+  it("fails closed on every button when no send control is identified", () => {
+    const window = compose(unidentifiable);
+
+    expect(
+      resolveComposeButtonActivation(window, window.querySelector("#c")),
+    ).toEqual({ kind: "no-send-control" });
+  });
+
+  it("lets a non send button through once the send control is known", () => {
+    const window = compose(identifiable);
+
+    expect(
+      resolveComposeButtonActivation(window, window.querySelector("#discard")),
+    ).toEqual({ kind: "ignore" });
+  });
+
+  it("scans when the identified send control is the one clicked", () => {
+    const window = compose(identifiable);
+
+    const outcome = resolveComposeButtonActivation(
+      window,
+      window.querySelector("#send"),
+    );
+
+    expect(outcome.kind).toBe("scan");
+    if (outcome.kind !== "scan") throw new Error("expected a scan");
+    expect(outcome.trigger.element.id).toBe("send");
+  });
+
+  it("ignores a click that is not on a button at all", () => {
+    const window = compose(identifiable);
+
+    expect(
+      resolveComposeButtonActivation(
+        window,
+        window.querySelector('[role="textbox"]'),
+      ),
+    ).toEqual({ kind: "ignore" });
+    expect(resolveComposeButtonActivation(window, null)).toEqual({
+      kind: "ignore",
+    });
   });
 });

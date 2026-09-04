@@ -359,10 +359,15 @@ function NumberField({
         max={max}
         value={value ?? ""}
         placeholder="Any"
-        onChange={(e) =>
-          onChange(e.target.value === "" ? null : Number(e.target.value))
-        }
+        onChange={(e) => onChange(clamp(e.target.value, min, max))}
       />
     </div>
   );
+}
+
+function clamp(raw: string, min: number, max: number): number | null {
+  if (raw.trim() === "") return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
 }

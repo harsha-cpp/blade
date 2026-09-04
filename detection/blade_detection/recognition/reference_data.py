@@ -109,6 +109,7 @@ IFSC_BANK_CODES: Final[frozenset[str]] = frozenset(
         "HDFC",
         "HPSC",
         "HSBC",
+        "IBKL",
         "ICIC",
         "IDFB",
         "IDIB",

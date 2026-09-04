@@ -4,9 +4,12 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import cast
 
+import structlog
 from redis.asyncio import Redis
 
 from blade_backend.settings import get_settings
+
+logger = structlog.get_logger(__name__)
 
 REDIS_FIRST_RETRY_SECONDS = 5.0
 REDIS_MAX_RETRY_SECONDS = 300.0
@@ -46,6 +49,14 @@ class RedisGate:
     def drop(self) -> None:
         self._client = None
         self._schedule_retry()
+        logger.warning(
+            "redis dropped out of the request path",
+            retry_in_seconds=self._backoff_seconds,
+            impact=(
+                "shared counters fall back to per-process memory until redis answers "
+                "again, so every rate limit and lockout is enforced per worker"
+            ),
+        )
 
     def suspend(self) -> None:
         self._client = None

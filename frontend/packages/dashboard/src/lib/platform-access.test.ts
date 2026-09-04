@@ -111,7 +111,7 @@ describe("probePlatformAccess", () => {
 
     await expect(
       probePlatformAccess({ role: "admin", email: "cto@hospital.example" }),
-    ).resolves.toBe(false);
+    ).resolves.toBe("denied");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -121,7 +121,7 @@ describe("probePlatformAccess", () => {
 
     await expect(
       probePlatformAccess({ role: "owner", email: "ops@blade.example" }),
-    ).resolves.toBe(true);
+    ).resolves.toBe("allowed");
 
     const [url] = requestedCall(fetchMock);
     expect(url.searchParams.get("limit")).toBe("1");
@@ -137,7 +137,7 @@ describe("probePlatformAccess", () => {
 
     await expect(
       probePlatformAccess({ role: "owner", email: "owner@hospital.example" }),
-    ).resolves.toBe(false);
+    ).resolves.toBe("denied");
   });
 
   it("probes once per session and reuses the answer", async () => {
@@ -151,13 +151,52 @@ describe("probePlatformAccess", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a server error as an error, not as a denial", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(503, { detail: "down" })),
+    );
+
+    await expect(
+      probePlatformAccess({ role: "owner", email: "ops@blade.example" }),
+    ).resolves.toBe("error");
+  });
+
   it("retries after a server error rather than caching a wrong no", async () => {
     const fetchMock = vi.fn(async () => jsonResponse(503, { detail: "down" }));
     vi.stubGlobal("fetch", fetchMock);
 
     const identity = { role: "owner" as const, email: "ops@blade.example" };
-    await expect(probePlatformAccess(identity)).resolves.toBe(false);
-    await expect(probePlatformAccess(identity)).resolves.toBe(false);
+    await expect(probePlatformAccess(identity)).resolves.toBe("error");
+    await expect(probePlatformAccess(identity)).resolves.toBe("error");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a settled denial so the page is not re-probed on every mount", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(403, { detail: "not a platform operator" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const identity = {
+      role: "owner" as const,
+      email: "owner@hospital.example",
+    };
+    await expect(probePlatformAccess(identity)).resolves.toBe("denied");
+    await expect(probePlatformAccess(identity)).resolves.toBe("denied");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets every answer once the session ends", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, page(null)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const identity = { role: "owner" as const, email: "ops@blade.example" };
+    await probePlatformAccess(identity);
+    clearPlatformAccessProbes();
+    await probePlatformAccess(identity);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

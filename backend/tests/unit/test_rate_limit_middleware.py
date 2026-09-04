@@ -6,6 +6,7 @@ import secrets
 
 import pytest
 from starlette.requests import Request
+from starlette.types import Receive, Scope, Send
 
 from blade_backend.auth.jwt import issue_access_token
 from blade_backend.observability import security as security_module
@@ -33,12 +34,12 @@ def _request(
     )
 
 
-async def _noop(_scope: object, _receive: object, _send: object) -> None:
-    return None
+async def _noop(scope: Scope, receive: Receive, send: Send) -> None:
+    del scope, receive, send
 
 
-def _middleware(**overrides: object) -> RateLimitMiddleware:
-    middleware = RateLimitMiddleware(_noop, **overrides)  # type: ignore[arg-type]
+def _middleware(limit: int | None = None) -> RateLimitMiddleware:
+    middleware = RateLimitMiddleware(_noop, limit=limit)
     middleware._redis.suspend()
     return middleware
 

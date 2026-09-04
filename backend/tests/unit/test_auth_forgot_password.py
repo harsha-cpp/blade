@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
@@ -15,6 +15,7 @@ from starlette.requests import Request
 from blade_backend.auth import api as auth_api
 from blade_backend.auth.api import ForgotPasswordRequest, forgot_password
 from blade_backend.auth.rate_limit import LoginRateLimiter
+from blade_backend.auth.tokens import IssuedToken
 from blade_backend.db.models import OrgMember, PasswordResetToken
 from blade_backend.email import set_mailer
 
@@ -134,9 +135,9 @@ async def test_both_branches_mint_a_token_before_the_lookup(
     minted: list[str] = []
     original = auth_api.issue_token
 
-    def counting_issue_token(prefix: str, **kwargs: object) -> object:
+    def counting_issue_token(prefix: str, *, ttl: timedelta) -> IssuedToken:
         minted.append(prefix)
-        return original(prefix, **kwargs)  # type: ignore[arg-type]
+        return original(prefix, ttl=ttl)
 
     monkeypatch.setattr(auth_api, "issue_token", counting_issue_token)
     set_mailer(_RecordingMailer())

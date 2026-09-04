@@ -11,7 +11,9 @@ const LIMITS = {
   message: { max: 2000 },
 } as const;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_PATTERN = /^[^\s@.]+(?:\.[^\s@.]+)*@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
+const HONEYPOT_INPUT_NAME = "ra-ref-2";
 
 const SIZE_OPTIONS: [string, string][] = [
   ["under-100", "Under 100 beds"],
@@ -50,6 +52,20 @@ const EMPTY_VALUES: FormValues = {
   website: "",
 };
 
+const FIELD_ERRORS: Record<FieldName, string> = {
+  organization: "Enter the hospital or group name, 2 to 200 characters.",
+  name: "Enter your name, up to 120 characters.",
+  email: "Enter a work email address we can reply to.",
+  phone: "Keep the phone number to 32 characters or fewer.",
+  role: "Keep the role to 80 characters or fewer.",
+  size: "Choose one of the listed ranges.",
+  message: "Keep the message to 2000 characters or fewer.",
+};
+
+function isFieldName(value: string): value is FieldName {
+  return Object.prototype.hasOwnProperty.call(FIELD_ERRORS, value);
+}
+
 function validate(values: FormValues): FieldErrors {
   const errors: FieldErrors = {};
 
@@ -58,37 +74,52 @@ function validate(values: FormValues): FieldErrors {
     organization.length < LIMITS.organization.min ||
     organization.length > LIMITS.organization.max
   ) {
-    errors.organization =
-      "Enter the hospital or group name, 2 to 200 characters.";
+    errors.organization = FIELD_ERRORS.organization;
   }
 
   const name = values.name.trim();
   if (name.length < LIMITS.name.min || name.length > LIMITS.name.max) {
-    errors.name = "Enter your name, up to 120 characters.";
+    errors.name = FIELD_ERRORS.name;
   }
 
   const email = values.email.trim();
   if (!EMAIL_PATTERN.test(email)) {
-    errors.email = "Enter a work email address we can reply to.";
+    errors.email = FIELD_ERRORS.email;
   }
 
   if (values.phone.trim().length > LIMITS.phone.max) {
-    errors.phone = "Keep the phone number to 32 characters or fewer.";
+    errors.phone = FIELD_ERRORS.phone;
   }
 
   if (values.role.trim().length > LIMITS.role.max) {
-    errors.role = "Keep the role to 80 characters or fewer.";
+    errors.role = FIELD_ERRORS.role;
   }
 
   const knownSizes = SIZE_OPTIONS.map(([value]) => value);
   if (values.size !== "" && !knownSizes.includes(values.size)) {
-    errors.size = "Choose one of the listed ranges.";
+    errors.size = FIELD_ERRORS.size;
   }
 
   if (values.message.trim().length > LIMITS.message.max) {
-    errors.message = "Keep the message to 2000 characters or fewer.";
+    errors.message = FIELD_ERRORS.message;
   }
 
+  return errors;
+}
+
+function rejectedFields(body: unknown): FieldErrors {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (!Array.isArray(detail)) return {};
+
+  const errors: FieldErrors = {};
+  for (const item of detail) {
+    const loc = (item as { loc?: unknown }).loc;
+    if (!Array.isArray(loc)) continue;
+    for (const part of loc) {
+      const name = String(part);
+      if (isFieldName(name)) errors[name] = FIELD_ERRORS[name];
+    }
+  }
   return errors;
 }
 
@@ -174,6 +205,18 @@ export default function RequestAccessForm() {
 
   function update(field: keyof FormValues, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
+
+    if (field === "website" || errors[field] === undefined) return;
+    const remaining = { ...errors };
+    delete remaining[field];
+    setErrors(remaining);
+    if (
+      Object.keys(remaining).length === 0 &&
+      state.kind === "error" &&
+      state.reason === "validation"
+    ) {
+      setState({ kind: "idle" });
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -211,6 +254,8 @@ export default function RequestAccessForm() {
         return;
       }
       if (response.status === 422) {
+        const body: unknown = await response.json().catch(() => null);
+        setErrors(rejectedFields(body));
         setState({ kind: "error", reason: "validation" });
         return;
       }
@@ -409,13 +454,12 @@ export default function RequestAccessForm() {
         aria-hidden
         className="absolute left-[-9999px] top-0 h-px w-px overflow-hidden"
       >
-        <label htmlFor="website">Website</label>
         <input
-          id="website"
-          name="website"
+          id={HONEYPOT_INPUT_NAME}
+          name={HONEYPOT_INPUT_NAME}
           type="text"
           tabIndex={-1}
-          autoComplete="off"
+          autoComplete="new-password"
           value={values.website}
           onChange={(e) => update("website", e.target.value)}
         />
@@ -429,7 +473,11 @@ export default function RequestAccessForm() {
           className="border border-blue bg-ink-2 px-4 py-3 focus:outline-2 focus:outline-offset-2 focus:outline-blue"
         >
           <p className="font-rsr text-[16px] leading-[24px] tracking-[-0.32px] text-cream">
-            {state.reason === "validation" ? "Check the highlighted fields." : null}
+            {state.reason === "validation"
+              ? Object.keys(errors).length > 0
+                ? "Check the highlighted fields."
+                : "We could not accept those details. Check them and try again."
+              : null}
             {state.reason === "rate-limit"
               ? "Too many requests from this network. Try again in a few minutes."
               : null}

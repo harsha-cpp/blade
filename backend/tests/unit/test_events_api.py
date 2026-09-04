@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from blade_backend.db.models import AuditEvent, Organization, ScanEvent
 from blade_backend.events.api import EventPayload, ingest_event
@@ -32,6 +34,10 @@ class _FakeSession:
 
     async def rollback(self) -> None:
         self.rollbacks += 1
+
+
+def _as_session(session: _FakeSession) -> AsyncSession:
+    return cast(AsyncSession, cast(Any, session))
 
 
 def _session(org_id: UUID, *, duplicate: bool = False) -> _FakeSession:
@@ -62,7 +68,7 @@ def _only(session: _FakeSession, kind: type[object]) -> list[object]:
 async def test_ingest_event_is_idempotent_and_normalizes_payload() -> None:
     org_id = uuid4()
     session = _session(org_id)
-    result = await ingest_event(_payload(), session)  # type: ignore[arg-type]
+    result = await ingest_event(_payload(), _as_session(session))
 
     assert result == {"status": "accepted"}
     assert session.commits == 1
@@ -79,7 +85,7 @@ async def test_ingest_event_is_idempotent_and_normalizes_payload() -> None:
 @pytest.mark.unit
 async def test_ingest_event_duplicate_does_not_double_count() -> None:
     session = _session(uuid4(), duplicate=True)
-    result = await ingest_event(_payload(), session)  # type: ignore[arg-type]
+    result = await ingest_event(_payload(), _as_session(session))
 
     assert result == {"status": "duplicate"}
     assert session.added == []
@@ -99,7 +105,7 @@ async def test_ingest_event_rejects_future_timestamp() -> None:
     session = _session(uuid4())
 
     with pytest.raises(HTTPException) as exc_info:
-        await ingest_event(payload, session)  # type: ignore[arg-type]
+        await ingest_event(payload, _as_session(session))
 
     assert exc_info.value.status_code == 422
     assert session.commits == 0
@@ -117,7 +123,7 @@ async def test_web_event_stores_the_site_and_the_masked_value() -> None:
         ],
     )
 
-    result = await ingest_event(payload, session)  # type: ignore[arg-type]
+    result = await ingest_event(payload, _as_session(session))
 
     assert result == {"status": "accepted"}
     event = _only(session, ScanEvent)[0]
@@ -131,7 +137,7 @@ async def test_web_event_stores_the_site_and_the_masked_value() -> None:
 async def test_email_event_without_a_channel_still_ingests() -> None:
     session = _session(uuid4())
 
-    result = await ingest_event(_payload(), session)  # type: ignore[arg-type]
+    result = await ingest_event(_payload(), _as_session(session))
 
     assert result == {"status": "accepted"}
     event = _only(session, ScanEvent)[0]
@@ -181,7 +187,7 @@ async def test_ingest_writes_an_audit_row_naming_the_site() -> None:
         ],
     )
 
-    await ingest_event(payload, session)  # type: ignore[arg-type]
+    await ingest_event(payload, _as_session(session))
 
     audits = _only(session, AuditEvent)
     assert len(audits) == 1
@@ -203,7 +209,7 @@ async def test_ingest_writes_an_audit_row_naming_the_site() -> None:
 async def test_duplicate_event_writes_no_second_audit_row() -> None:
     session = _session(uuid4(), duplicate=True)
 
-    result = await ingest_event(_payload(), session)  # type: ignore[arg-type]
+    result = await ingest_event(_payload(), _as_session(session))
 
     assert result == {"status": "duplicate"}
     assert _only(session, AuditEvent) == []
@@ -216,7 +222,7 @@ async def test_a_raw_identifier_from_the_extension_is_masked_before_it_is_stored
         entities=[{"type": "IN_AADHAAR", "confidence": 0.99, "masked_value": "7534 7930 7460"}]
     )
 
-    await ingest_event(payload, session)  # type: ignore[arg-type]
+    await ingest_event(payload, _as_session(session))
 
     event = _only(session, ScanEvent)[0]
     assert isinstance(event, ScanEvent)
@@ -242,7 +248,7 @@ async def test_a_name_is_masked_in_full_rather_than_down_to_four_characters() ->
         entities=[{"type": "PERSON", "confidence": 0.8, "masked_value": "Lakshmi Devi"}]
     )
 
-    await ingest_event(payload, session)  # type: ignore[arg-type]
+    await ingest_event(payload, _as_session(session))
 
     event = _only(session, ScanEvent)[0]
     assert isinstance(event, ScanEvent)

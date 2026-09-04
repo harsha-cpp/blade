@@ -28,11 +28,11 @@ export const entityHitSchema = z.object({
   masked_value: z.string(),
   confidence: z.number().min(0).max(1),
   source: z.enum(["body", "subject", "attachment"]),
-  attachment_id: z.string().optional(),
+  attachment_id: z.string().nullable().optional(),
 });
 
 export const recipientHitSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1),
   classification: recipientClassSchema,
 });
 

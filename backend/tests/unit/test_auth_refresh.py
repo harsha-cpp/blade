@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from blade_backend.auth.api import refresh
@@ -28,6 +30,10 @@ class _FakeSession:
 
     async def commit(self) -> None:
         self.commits += 1
+
+
+def _as_session(session: _FakeSession) -> AsyncSession:
+    return cast(AsyncSession, cast(Any, session))
 
 
 def _request_with_refresh_cookie(raw_token: str) -> Request:
@@ -58,7 +64,9 @@ async def test_replayed_refresh_token_does_not_mint_descendant() -> None:
     session = _FakeSession(record)
 
     with pytest.raises(HTTPException) as exc_info:
-        await refresh(Response(), _request_with_refresh_cookie(issued.raw_token), session)  # type: ignore[arg-type]
+        await refresh(
+            Response(), _request_with_refresh_cookie(issued.raw_token), _as_session(session)
+        )
 
     assert exc_info.value.status_code == 401
     assert session.added == []

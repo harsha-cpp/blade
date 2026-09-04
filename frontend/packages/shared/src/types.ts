@@ -13,7 +13,7 @@ export interface EntityHit {
   masked_value: string;
   confidence: number;
   source: "body" | "subject" | "attachment";
-  attachment_id?: string | undefined;
+  attachment_id?: string | null | undefined;
 }
 
 export interface RecipientHit {

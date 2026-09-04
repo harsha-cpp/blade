@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import OrderedDict
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import Select, or_, select
 
-from blade_backend.api.pagination import decode_cursor, encode_cursor
+from blade_backend.api.pagination import (
+    MAX_PAGE_SIZE,
+    decode_cursor,
+    empty_page_items,
+    encode_cursor,
+)
 from blade_backend.audit.service import BreakKind, verify_chain
 from blade_backend.db.models import AuditEvent
 from blade_backend.deps import CurrentMember, DbSession, OwnerOrAdmin
@@ -18,10 +24,12 @@ from blade_backend.observability.redis_gate import RedisGate
 
 router = APIRouter()
 
-MAX_PAGE_SIZE = 200
 CHAIN_COOLDOWN_SECONDS = 60
+CHAIN_WALK_WAIT_SECONDS = 10.0
+CHAIN_WALK_POLL_SECONDS = 0.05
 MAX_CACHED_ORGS = 5_000
 LIKE_ESCAPE = "\\"
+_WALK_IN_FLIGHT_DETAIL = "chain verification is already running for this organization"
 
 
 class AuditEventOut(BaseModel):
@@ -35,12 +43,8 @@ class AuditEventOut(BaseModel):
     created_at: str
 
 
-def _empty_events() -> list[AuditEventOut]:
-    return []
-
-
 class AuditPage(BaseModel):
-    events: list[AuditEventOut] = Field(default_factory=_empty_events)
+    events: list[AuditEventOut] = Field(default_factory=empty_page_items(AuditEventOut))
     next_cursor: str | None = None
 
 
@@ -59,6 +63,7 @@ class ChainStatusCache:
     def __init__(self) -> None:
         self._redis = RedisGate()
         self._entries: OrderedDict[UUID, tuple[float, str]] = OrderedDict()
+        self._walks: OrderedDict[UUID, float] = OrderedDict()
 
     async def get(self, org_id: UUID) -> ChainStatus | None:
         payload = await self._read(org_id)
@@ -80,8 +85,42 @@ class ChainStatusCache:
         while len(self._entries) > MAX_CACHED_ORGS:
             self._entries.popitem(last=False)
 
+    async def claim_walk(self, org_id: UUID) -> bool:
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                claimed = await redis.set(
+                    _chain_lock_key(org_id), "1", ex=CHAIN_COOLDOWN_SECONDS, nx=True
+                )
+            except Exception:
+                self._redis.drop()
+            else:
+                return bool(claimed)
+        return self._claim_walk_in_memory(org_id)
+
+    async def release_walk(self, org_id: UUID) -> None:
+        redis = await self._redis.client()
+        if redis is not None:
+            try:
+                await redis.delete(_chain_lock_key(org_id))
+            except Exception:
+                self._redis.drop()
+        self._walks.pop(org_id, None)
+
+    def _claim_walk_in_memory(self, org_id: UUID) -> bool:
+        now = time.monotonic()
+        started_at = self._walks.get(org_id)
+        if started_at is not None and now - started_at < CHAIN_COOLDOWN_SECONDS:
+            return False
+        self._walks[org_id] = now
+        self._walks.move_to_end(org_id)
+        while len(self._walks) > MAX_CACHED_ORGS:
+            self._walks.popitem(last=False)
+        return True
+
     def clear(self) -> None:
         self._entries.clear()
+        self._walks.clear()
 
     async def _read(self, org_id: UUID) -> str | None:
         redis = await self._redis.client()
@@ -102,6 +141,10 @@ class ChainStatusCache:
 
 def _chain_key(org_id: UUID) -> str:
     return f"auditchain:{org_id}"
+
+
+def _chain_lock_key(org_id: UUID) -> str:
+    return f"auditchainwalk:{org_id}"
 
 
 chain_status_cache = ChainStatusCache()
@@ -137,7 +180,9 @@ def _apply_filters(
     if category:
         statement = statement.where(AuditEvent.category == category)
     if actor:
-        statement = statement.where(AuditEvent.actor.ilike(f"%{actor.strip()}%"))
+        statement = statement.where(
+            AuditEvent.actor.ilike(f"%{escape_like(actor.strip())}%", escape=LIKE_ESCAPE)
+        )
     if action:
         statement = statement.where(AuditEvent.action == action)
     if since:
@@ -228,14 +273,26 @@ async def verify_audit_chain(member: OwnerOrAdmin, session: DbSession) -> ChainS
     loaded, which is not a tamper-evidence claim worth making. A full walk reads
     every row of the log, so one organisation gets one real verification a
     minute and repeat callers are served the result of that walk.
+
+    The cooldown alone did not stop callers arriving together: the result is
+    only cached once the walk finishes, so a handful of simultaneous requests
+    each started their own full read of the table. The walk is claimed first,
+    and everyone else waits for the answer the winner publishes.
     """
     cached = await chain_status_cache.get(member.org_id)
     if cached is not None:
         return cached
+    if not await chain_status_cache.claim_walk(member.org_id):
+        return await _walk_result_from_the_caller_in_front(member.org_id)
 
-    result = await verify_chain(session, member.org_id)
+    try:
+        result = await verify_chain(session, member.org_id)
+    except Exception:
+        await chain_status_cache.release_walk(member.org_id)
+        raise
+
     broken = result.broken
-    status = ChainStatus(
+    walked = ChainStatus(
         ok=result.ok,
         checked=result.checked,
         legacy=result.legacy,
@@ -244,5 +301,19 @@ async def verify_audit_chain(member: OwnerOrAdmin, session: DbSession) -> ChainS
         detail=broken.reason if broken else None,
         verified_at=datetime.now(UTC).isoformat(),
     )
-    await chain_status_cache.put(member.org_id, status)
-    return status
+    await chain_status_cache.put(member.org_id, walked)
+    return walked
+
+
+async def _walk_result_from_the_caller_in_front(org_id: UUID) -> ChainStatus:
+    deadline = time.monotonic() + CHAIN_WALK_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        await asyncio.sleep(CHAIN_WALK_POLL_SECONDS)
+        published = await chain_status_cache.get(org_id)
+        if published is not None:
+            return published
+    raise HTTPException(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=_WALK_IN_FLIGHT_DETAIL,
+        headers={"Retry-After": str(int(CHAIN_WALK_WAIT_SECONDS))},
+    )

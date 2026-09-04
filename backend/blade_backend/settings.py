@@ -25,6 +25,7 @@ _CSV_LIST_FIELDS = frozenset(
 )
 _RELAXED_ENVS = frozenset({"local", "test"})
 DEV_AUDIT_HMAC_KEY = "blade-local-audit-hmac-key-not-for-deployment"
+MINIMUM_DEPLOYED_SECRET_LENGTH = 32
 
 
 class _CsvOrJsonDecoder:
@@ -87,7 +88,7 @@ class Settings(BaseSettings):
     refresh_cookie_samesite: Literal["lax", "strict", "none"] = Field(default="lax")
     login_rate_limit_per_minute: int = Field(default=5)
     login_rate_limit_per_hour: int = Field(default=20)
-    trusted_proxy_count: int = Field(default=0, ge=0, le=8)
+    trusted_proxy_count: int = Field(default=1, ge=0, le=8)
     allow_open_signup: bool = Field(default=True)
     refresh_rotation_grace_seconds: int = Field(default=60, ge=0, le=600)
     password_reset_ttl_seconds: int = Field(default=3600, ge=300, le=86400)
@@ -139,7 +140,7 @@ class Settings(BaseSettings):
     celery_task_soft_time_limit: int = Field(default=300, ge=1, le=86_400)
     celery_task_time_limit: int = Field(default=330, ge=2, le=86_400)
     token_retention_days: int = Field(default=30, ge=1, le=3650)
-    access_request_retention_days: int = Field(default=0, ge=0, le=3650)
+    access_request_retention_days: int = Field(default=365, ge=0, le=3650)
 
     sentry_dsn: str | None = Field(default=None)
 
@@ -166,10 +167,14 @@ class Settings(BaseSettings):
         "s3_server_side_encryption",
         "smtp_user",
         "access_request_notify_email",
+        "audit_hmac_key",
+        "mfa_encryption_key",
         mode="before",
     )
     @classmethod
     def empty_string_as_none(cls, value: object) -> object:
+        if isinstance(value, SecretStr):
+            return value if value.get_secret_value().strip() else None
         if isinstance(value, str) and not value.strip():
             return None
         return value
@@ -187,6 +192,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "CELERY_TASK_TIME_LIMIT must be greater than CELERY_TASK_SOFT_TIME_LIMIT: "
                 "the soft limit exists so the task can record a failure before it is killed"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def enforce_token_retention_outlives_refresh_tokens(self) -> Settings:
+        if self.token_retention_days < self.jwt_refresh_ttl_days:
+            raise ValueError(
+                "TOKEN_RETENTION_DAYS must be at least JWT_REFRESH_TTL_DAYS "
+                f"({self.jwt_refresh_ttl_days}): the daily purge would otherwise delete the "
+                "rotated row that a replayed refresh token is matched against, and a stolen "
+                "token would read as unknown instead of revoking its whole family"
             )
         return self
 
@@ -213,6 +229,39 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"AUDIT_HMAC_KEY must be set when {deployment}: without a deployment key "
                 "the audit row signatures can be recomputed by anyone who can write rows"
+            )
+        if len(self.audit_hmac_key_value) < MINIMUM_DEPLOYED_SECRET_LENGTH:
+            raise ValueError(
+                f"AUDIT_HMAC_KEY must be at least {MINIMUM_DEPLOYED_SECRET_LENGTH} characters "
+                f"when {deployment}: it is the only part of an audit row that someone with "
+                "write access to the table cannot recompute"
+            )
+        mfa_key = self.mfa_encryption_key
+        if mfa_key is not None and len(mfa_key.get_secret_value()) < MINIMUM_DEPLOYED_SECRET_LENGTH:
+            raise ValueError(
+                f"MFA_ENCRYPTION_KEY must be at least {MINIMUM_DEPLOYED_SECRET_LENGTH} "
+                f"characters when {deployment}: it encrypts every stored TOTP seed"
+            )
+        if not self.cors_origins:
+            raise ValueError(
+                f"CORS_ORIGINS must list the dashboard origin when {deployment}: it is the "
+                "allow-list the cross-site guard on /auth/refresh and /auth/logout checks, "
+                "so an empty list answers every browser refresh and every sign-out with 403 "
+                '(for example CORS_ORIGINS=["https://app.example"])'
+            )
+        if self.trusted_proxy_count < 1:
+            raise ValueError(
+                f"TRUSTED_PROXY_COUNT must be at least 1 when {deployment}: uvicorn is "
+                "started with --proxy-headers --forwarded-allow-ips '*', so at 0 every "
+                "IP-keyed limit is keyed on an address the caller writes itself in "
+                "X-Forwarded-For. Count the proxies that append to that header: 1 for a "
+                "single reverse proxy, 2 for Cloudflare in front of the platform proxy"
+            )
+        if self.allow_open_signup:
+            raise ValueError(
+                f"ALLOW_OPEN_SIGNUP must be false when {deployment}: open signup mints an "
+                "active owner for any address that is typed in, and the platform operator "
+                "gate is keyed on owning an organization with a listed address"
             )
         return self
 

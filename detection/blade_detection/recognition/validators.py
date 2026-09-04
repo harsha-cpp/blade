@@ -196,25 +196,38 @@ _ICD10_SUBCODE_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9][0-9A-Z]{0,3}$")
 
 
 @lru_cache(maxsize=1)
-def icd10_categories() -> frozenset[str]:
+def clinical_modification_categories() -> frozenset[str]:
     try:
         import simple_icd_10_cm as icd
     except ImportError:  # pragma: no cover - dependency is declared
-        return WHO_ICD10_CATEGORIES
-    clinical_modification = {
+        return frozenset()
+    return frozenset(
         code for code in icd.get_all_codes(with_dots=False) if len(code) == 3 and code[0].isalpha()
-    }
-    return frozenset(clinical_modification | WHO_ICD10_CATEGORIES)
+    )
+
+
+@lru_cache(maxsize=1)
+def icd10_categories() -> frozenset[str]:
+    return clinical_modification_categories() | WHO_ICD10_CATEGORIES
+
+
+@lru_cache(maxsize=4096)
+def _is_clinical_modification_item(dotless_code: str) -> bool:
+    try:
+        import simple_icd_10_cm as icd
+    except ImportError:  # pragma: no cover - dependency is declared
+        return True
+    return bool(icd.is_valid_item(dotless_code))
 
 
 def validate_icd10(value: str) -> bool:
     code = value.strip().upper()
     category, dot, subcode = code.partition(".")
-    if category not in icd10_categories():
+    if dot and not _ICD10_SUBCODE_RE.match(subcode):
         return False
-    if not dot:
-        return True
-    return bool(_ICD10_SUBCODE_RE.match(subcode))
+    if category in clinical_modification_categories():
+        return _is_clinical_modification_item(category + subcode)
+    return category in WHO_ICD10_CATEGORIES
 
 
 def validate_in_phone(value: str) -> bool:

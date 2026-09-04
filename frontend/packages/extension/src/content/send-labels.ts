@@ -4,6 +4,7 @@ export interface SendLabelSet {
   scheduleSend: readonly string[];
   nonCommit: readonly string[];
   moreOptions: readonly string[];
+  scheduleNavigation: readonly string[];
 }
 
 export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
@@ -29,6 +30,14 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "signature",
     ],
     moreOptions: ["more send options", "more options"],
+    scheduleNavigation: [
+      "pick date",
+      "previous",
+      "next",
+      "month",
+      "year",
+      "today",
+    ],
   },
   {
     language: "Hindi",
@@ -62,6 +71,7 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "ज़्यादा विकल्प",
       "अन्य विकल्प",
     ],
+    scheduleNavigation: ["तारीख चुनें", "पिछला", "अगला", "महीना", "साल", "आज"],
   },
   {
     language: "Marathi",
@@ -86,6 +96,14 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "फॉरमॅटिंग पर्याय",
     ],
     moreOptions: ["पाठवण्याचे आणखी पर्याय", "आणखी पर्याय", "अधिक पर्याय"],
+    scheduleNavigation: [
+      "तारीख निवडा",
+      "मागील",
+      "पुढील",
+      "महिना",
+      "वर्ष",
+      "आज",
+    ],
   },
   {
     language: "Bengali",
@@ -104,6 +122,7 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "সহায়তা",
     ],
     moreOptions: ["পাঠানোর আরও বিকল্প", "আরও বিকল্প"],
+    scheduleNavigation: ["তারিখ বেছে নিন", "আগের", "পরের", "মাস", "বছর", "আজ"],
   },
   {
     language: "Gujarati",
@@ -127,6 +146,14 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "સહાય",
     ],
     moreOptions: ["મોકલવાના વધુ વિકલ્પો", "વધુ વિકલ્પો"],
+    scheduleNavigation: [
+      "તારીખ પસંદ કરો",
+      "પાછલું",
+      "આગલું",
+      "મહિનો",
+      "વર્ષ",
+      "આજે",
+    ],
   },
   {
     language: "Tamil",
@@ -155,6 +182,14 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "கூடுதல் விருப்பங்கள்",
       "மேலும் விருப்பங்கள்",
     ],
+    scheduleNavigation: [
+      "தேதியைத் தேர்ந்தெடு",
+      "முந்தைய",
+      "அடுத்த",
+      "மாதம்",
+      "ஆண்டு",
+      "இன்று",
+    ],
   },
   {
     language: "Telugu",
@@ -178,6 +213,14 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "సహాయం",
     ],
     moreOptions: ["మరిన్ని పంపే ఎంపికలు", "మరిన్ని ఎంపికలు"],
+    scheduleNavigation: [
+      "తేదీని ఎంచుకోండి",
+      "మునుపటి",
+      "తదుపరి",
+      "నెల",
+      "సంవత్సరం",
+      "ఈరోజు",
+    ],
   },
   {
     language: "Kannada",
@@ -200,6 +243,14 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "ಸಹಾಯ",
     ],
     moreOptions: ["ಕಳುಹಿಸುವ ಹೆಚ್ಚಿನ ಆಯ್ಕೆಗಳು", "ಹೆಚ್ಚಿನ ಆಯ್ಕೆಗಳು"],
+    scheduleNavigation: [
+      "ದಿನಾಂಕ ಆಯ್ಕೆಮಾಡಿ",
+      "ಹಿಂದಿನ",
+      "ಮುಂದಿನ",
+      "ತಿಂಗಳು",
+      "ವರ್ಷ",
+      "ಇಂದು",
+    ],
   },
   {
     language: "Malayalam",
@@ -222,5 +273,13 @@ export const SEND_LABEL_TABLE: readonly SendLabelSet[] = [
       "സഹായം",
     ],
     moreOptions: ["അയയ്ക്കാനുള്ള കൂടുതൽ ഓപ്ഷനുകൾ", "കൂടുതൽ ഓപ്ഷനുകൾ"],
+    scheduleNavigation: [
+      "തീയതി തിരഞ്ഞെടുക്കുക",
+      "മുമ്പത്തെ",
+      "അടുത്ത",
+      "മാസം",
+      "വർഷം",
+      "ഇന്ന്",
+    ],
   },
 ];

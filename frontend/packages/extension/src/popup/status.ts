@@ -42,22 +42,25 @@ function tokenRejected(input: ProtectionInput): boolean {
   return Boolean(input.deviceToken) && input.lastAuth?.kind === "unauthorized";
 }
 
-export function protectionStatus(input: ProtectionInput): ProtectionStatus {
-  if (!input.orgCode) {
-    return {
-      state: "unlinked",
-      label: "Not linked",
-      description:
-        "Messages with patient data are held for review until this install is linked.",
-    };
-  }
+function isLinked(input: ProtectionInput): boolean {
+  return Boolean(input.deviceToken) || Boolean(input.orgCode);
+}
 
+export function protectionStatus(input: ProtectionInput): ProtectionStatus {
   if (!input.hasConfig) {
+    if (!isLinked(input)) {
+      return {
+        state: "unlinked",
+        label: "Not linked",
+        description:
+          "Messages with patient data are held for review until this install is linked.",
+      };
+    }
     return {
       state: "unconfigured",
       label: "Configuration unavailable",
       description:
-        "Blade could not load the policy for this organization code, so messages with patient data are held for review. Check the code with your IT team.",
+        "Blade could not load the policy for this install, so messages with patient data are held for review. Check the device token or organization code with your IT team.",
     };
   }
 

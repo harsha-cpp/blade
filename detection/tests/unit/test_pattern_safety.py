@@ -8,6 +8,7 @@ from blade_detection.models import EmailPayload
 from blade_detection.recognition import custom_mrn_rules
 from blade_detection.recognition.pattern_safety import (
     MAX_PATTERN_CHARS,
+    PROBE_LENGTHS,
     is_safe_pattern,
     structural_risks,
 )
@@ -53,6 +54,23 @@ def test_a_bounded_but_explosive_pattern_is_caught_by_the_timing_probe() -> None
     pattern = r"(?:a?){22}a{22}"
     assert structural_risks(pattern) == []
     assert is_safe_pattern(pattern) is False
+
+
+@pytest.mark.parametrize("pattern", [r".*.*=.*", r"\s*\S*\s*=\s*\S*"])
+def test_superlinear_growth_between_probe_lengths_is_rejected(pattern: str) -> None:
+    assert structural_risks(pattern) == []
+    assert is_safe_pattern(pattern) is False
+
+
+def test_a_pattern_that_only_explodes_case_insensitively_is_rejected() -> None:
+    pattern = r"(?:A?){22}a{22}"
+    assert structural_risks(pattern) == []
+    assert is_safe_pattern(pattern) is False
+
+
+def test_the_probe_covers_the_longer_adversarial_lengths() -> None:
+    assert 64 in PROBE_LENGTHS
+    assert 128 in PROBE_LENGTHS
 
 
 def test_invalid_and_oversized_patterns_are_rejected() -> None:

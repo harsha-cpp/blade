@@ -64,13 +64,25 @@ x-backend-env: &backend-env
   # rotating the JWT secret would lock every user out of MFA - keep them separate
   # and rotate them on separate schedules.
   MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY - a second independent secret}
+  # Signs every audit row. Required outside local/test. Treat as permanent: rotating it
+  # marks every existing row as unverifiable.
+  AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?set AUDIT_HMAC_KEY - a third independent secret, generate with `openssl rand -base64 48`}
   # Number of proxies that append to X-Forwarded-For between the client and the
-  # API. 1 for a single nginx/Caddy in front; 2 behind an ALB *and* nginx. Wrong
-  # values put every hospital in one login-rate-limit bucket, or let a client
-  # spoof its own IP.
+  # API. 1 for a single nginx/Caddy in front; 2 behind an ALB *and* nginx, and 2
+  # when Cloudflare (or any CDN) sits in front of that proxy. Wrong values put
+  # every hospital in one login-rate-limit bucket, or let a client spoof its own
+  # IP. 0 is refused at boot.
   TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
   # Hospitals run closed: operators create the tenant, staff arrive by invite.
+  # Required false in every deployed APP_ENV; the app refuses to boot on true.
   ALLOW_OPEN_SIGNUP: ${ALLOW_OPEN_SIGNUP:-false}
+  # Retention windows for the daily purge run by the `beat` service below.
+  # TOKEN_RETENTION_DAYS must stay at or above JWT_REFRESH_TTL_DAYS, or a stolen
+  # refresh token outlives the rotated row that detects its reuse; the app
+  # refuses to boot otherwise.
+  TOKEN_RETENTION_DAYS: ${TOKEN_RETENTION_DAYS:-30}
+  # Marketing-site access requests. 0 keeps them forever.
+  ACCESS_REQUEST_RETENTION_DAYS: ${ACCESS_REQUEST_RETENTION_DAYS:-365}
   SENTRY_DSN: ${SENTRY_DSN:-}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   LOG_FORMAT: json
@@ -345,6 +357,55 @@ services:
         limits: { cpus: "4.0", memory: 4g }
         reservations: { memory: 1g }
 
+  # The scheduler. `beat_schedule` in blade_backend/tasks/celery_app.py is only a
+  # declaration: with no beat process running, nothing is ever purged. Same image
+  # and environment as the worker, different command.
+  #
+  # EXACTLY ONE for the whole deployment. Two beats double-fire every scheduled
+  # task, so this is the one service that must never be scaled.
+  beat:
+    image: ${IMAGE_PREFIX:-blade}/worker:${IMAGE_TAG:-latest}
+    build:
+      <<: *backend-build
+      dockerfile: docker/worker.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - path: ./api.env
+        required: true
+    environment: *backend-env
+    # WORKDIR is /app/backend and is owned by root, so beat's schedule database
+    # and pid file have to be pointed at the one directory the runtime user owns.
+    command:
+      - celery
+      - -A
+      - blade_backend.tasks.celery_app
+      - beat
+      - --loglevel=info
+      - --schedule=/var/lib/blade/celerybeat-schedule
+      - --pidfile=/var/lib/blade/celerybeat.pid
+    healthcheck:
+      # The worker image's HEALTHCHECK pings a Celery worker. Beat is not one, so
+      # it would report unhealthy forever and `up --wait` would never return.
+      disable: true
+    stop_grace_period: 30s
+    volumes:
+      - beat-state:/var/lib/blade
+    logging: *logging
+    <<: *hardening
+    deploy:
+      replicas: 1
+      resources:
+        limits: { cpus: "0.5", memory: 512m }
+
   dashboard:
     image: ${IMAGE_PREFIX:-blade}/dashboard:${IMAGE_TAG:-latest}
     build:
@@ -385,3 +446,4 @@ volumes:
   minio-data:
   api-state:
   worker-state:
+  beat-state:

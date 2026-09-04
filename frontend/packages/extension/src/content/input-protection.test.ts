@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  insertedRange,
   insertionCandidate,
   inspectProtectedText,
   installInputProtection,
@@ -306,5 +307,83 @@ describe("universal input protection", () => {
 
     expect(event.defaultPrevented).toBe(false);
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe("locating what an autofill just inserted", () => {
+  it("spans the inserted text ending at the caret", () => {
+    expect(
+      insertedRange("Call 9876543210", { start: 15, end: 15 }, "9876543210"),
+    ).toEqual({ start: 5, end: 15 });
+  });
+
+  it("gives up when the text does not match the caret", () => {
+    expect(
+      insertedRange("Call 9876543210", { start: 9, end: 9 }, "9876543210"),
+    ).toBeNull();
+    expect(
+      insertedRange("short", { start: 5, end: 5 }, "much longer"),
+    ).toBeNull();
+    expect(insertedRange("Call", { start: 4, end: 4 }, "")).toBeNull();
+  });
+});
+
+describe("what an autofill backstop takes out of the field", () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("removes only the inserted value and keeps the rest of the field", () => {
+    const field = document.createElement("textarea");
+    const kept = "Patient follow up. Call ";
+    field.value = `${kept}7534 7930 7460`;
+    document.body.append(field);
+    field.setSelectionRange(field.value.length, field.value.length);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+
+    const event = new InputEvent("input", {
+      bubbles: true,
+      data: "7534 7930 7460",
+      inputType: "insertReplacementText",
+    });
+    field.dispatchEvent(event);
+
+    expect(field.value).toBe(kept);
+    expect(notify).toHaveBeenCalledOnce();
+    dispose();
+  });
+
+  it("still clears the field when it cannot place the insertion", () => {
+    const field = document.createElement("textarea");
+    field.value = "Patient Aadhaar 7534 7930 7460";
+    document.body.append(field);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+
+    field.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+    expect(field.value).toBe("");
+    dispose();
+  });
+
+  it("clears the field when removing the insertion is not enough", () => {
+    const field = document.createElement("textarea");
+    field.value = "Patient Aadhaar 7534 7930 7460 and MRN 0024518";
+    document.body.append(field);
+    field.setSelectionRange(field.value.length, field.value.length);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+
+    field.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        data: " and MRN 0024518",
+        inputType: "insertReplacementText",
+      }),
+    );
+
+    expect(field.value).toBe("");
+    dispose();
   });
 });

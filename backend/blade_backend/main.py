@@ -23,7 +23,7 @@ from blade_backend.observability.security import (
     SecurityHeadersMiddleware,
 )
 from blade_backend.scan.runner import shutdown_detection_pool
-from blade_backend.settings import Settings, get_settings
+from blade_backend.settings import DEV_AUDIT_HMAC_KEY, Settings, get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -48,7 +48,7 @@ def warn_on_undefended_refresh_cookie(settings: Settings) -> None:
 
 
 def warn_on_development_audit_key(settings: Settings) -> None:
-    if settings.audit_hmac_key is not None:
+    if settings.audit_hmac_key_value != DEV_AUDIT_HMAC_KEY:
         return
     logger.warning(
         "audit row signatures are keyed with the built-in development key",
@@ -102,6 +102,9 @@ def create_app(
         lifespan=lifespan,
     )
 
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.cors_origins,
@@ -109,9 +112,6 @@ def create_app(
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(RequestSizeLimitMiddleware)
     if resolved_settings.landing_origins:
         app.add_middleware(
             PathScopedCORSMiddleware,

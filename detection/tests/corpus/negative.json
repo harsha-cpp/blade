@@ -226,5 +226,28 @@
       "the facilities helpdesk."
     ],
     "expect_phi": false
+  },
+  {
+    "id": "neg-procurement-invoice-001",
+    "category": "procurement",
+    "subject": "Invoice no 812806192057 for the ward furniture order",
+    "body": [
+      "Invoice no 812806192057 raised against the purchase order placed last month.",
+      "The vendor has asked us to clear it before the quarter closes.",
+      "No patient records are attached to this thread."
+    ],
+    "expect_phi": false,
+    "notes": "A commercial 12 digit number that happens to satisfy the Verhoeff checksum."
+  },
+  {
+    "id": "neg-procurement-transaction-001",
+    "category": "procurement",
+    "subject": "Vendor transaction id 748233725236 settled",
+    "body": [
+      "Vendor transaction id 748233725236 was settled against the GST invoice yesterday.",
+      "Finance has the receipt; nothing here needs clinical review."
+    ],
+    "expect_phi": false,
+    "notes": "Another Verhoeff valid commercial reference that must not read as an aadhaar."
   }
 ]

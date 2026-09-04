@@ -15,10 +15,12 @@ class Rule(BaseModel):
     validator: str | None = None
     context_terms: list[str] = Field(default_factory=_empty_strings)
     negative_terms: list[str] = Field(default_factory=_empty_strings)
+    weak_negative_terms: list[str] = Field(default_factory=_empty_strings)
     requires_context: bool = False
     context_window: int = 72
     context_boost: float = 0.2
     negative_penalty: float = 0.45
+    weak_negative_penalty: float = 0.25
     priority: int = 0
     value_group: int = 0
     case_sensitive: bool = False

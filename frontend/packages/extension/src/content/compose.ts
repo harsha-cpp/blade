@@ -1,5 +1,6 @@
 import type { AttachmentUrlRef } from "./attachments";
 import { extractUserEmail } from "./identity";
+import { recipientAddress } from "./policy";
 import { stripHtml } from "./phi";
 
 const DRIVE_HOSTS = new Set(["drive.google.com", "docs.google.com"]);
@@ -15,12 +16,53 @@ export interface ComposeData {
   fingerprint: string;
 }
 
+export class ComposeReadError extends Error {
+  constructor(missing: string) {
+    super(`Blade could not find the ${missing} of this draft`);
+    this.name = "ComposeReadError";
+  }
+}
+
 export function fileKey(file: File): string {
   return `${file.name}::${file.size}::${file.lastModified}`;
 }
 
+const SUBJECT_SELECTOR = 'input[name="subjectbox"]';
+
+const LABELLED_BODY_SELECTOR =
+  '[role="textbox"][aria-label*="Body" i], [role="textbox"][g_editable="true"], div[aria-label*="Message Body" i]';
+
+const EDITABLE_SELECTOR = '[role="textbox"],[contenteditable="true"]';
+
+const ADDRESS_FIELD_SELECTOR =
+  'input,textarea,[role="combobox"],[role="listbox"],[aria-label*="subject" i],[aria-label*="recipient" i],[aria-label*="To recipients" i]';
+
+function isDraftBody(el: HTMLElement): boolean {
+  if (el.closest(ADDRESS_FIELD_SELECTOR) !== null) return false;
+  return (
+    el.getAttribute("contenteditable") === "true" ||
+    el.getAttribute("g_editable") === "true" ||
+    el.isContentEditable === true
+  );
+}
+
+export function findComposeBody(compose: Element): HTMLElement | null {
+  const labelled = compose.querySelector<HTMLElement>(LABELLED_BODY_SELECTOR);
+  if (labelled) return labelled;
+  for (const el of compose.querySelectorAll<HTMLElement>(EDITABLE_SELECTOR)) {
+    if (isDraftBody(el)) return el;
+  }
+  return null;
+}
+
 function isQuoted(el: Element): boolean {
   return el.closest(".gmail_quote, blockquote") !== null;
+}
+
+function isSignature(el: Element): boolean {
+  return (
+    el.closest(".gmail_signature, [data-smartmail='gmail_signature']") !== null
+  );
 }
 
 export function extractAttachmentRefs(compose: Element): AttachmentUrlRef[] {
@@ -53,6 +95,23 @@ export function extractAttachmentRefs(compose: Element): AttachmentUrlRef[] {
   return Array.from(refs.values());
 }
 
+const ATTACHMENT_CHIP_SELECTOR = [
+  "[download_url]",
+  'a[href*="view=att"]',
+  'a[href*="disp=att"]',
+  'a[href*="realattid="]',
+  '[aria-label*="attachment" i]:not([role="button"]):not(button):not([role="menuitem"])',
+].join(", ");
+
+export function countAttachmentChips(compose: Element): number {
+  const chips = Array.from(
+    compose.querySelectorAll<HTMLElement>(ATTACHMENT_CHIP_SELECTOR),
+  ).filter((el) => !isQuoted(el));
+  return chips.filter(
+    (chip) => !chips.some((other) => other !== chip && other.contains(chip)),
+  ).length;
+}
+
 export function isDriveUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -65,7 +124,7 @@ export function isDriveUrl(url: string): boolean {
 export function extractDriveLinks(compose: Element): string[] {
   const links = new Set<string>();
   compose.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => {
-    if (isQuoted(anchor)) return;
+    if (isQuoted(anchor) || isSignature(anchor)) return;
     const href = anchor.href;
     if (isDriveUrl(href)) links.add(href);
   });
@@ -100,22 +159,26 @@ export function extractRecipients(compose: Element): string[] {
       });
   }
 
-  return [...new Set(recipients.map((r) => r.toLowerCase()))];
+  return [
+    ...new Set(
+      recipients
+        .map(recipientAddress)
+        .filter((address) => address.includes("@")),
+    ),
+  ];
 }
 
 export function extractComposeData(
   compose: Element,
   attachments: File[],
 ): ComposeData {
-  const subjectInput = compose.querySelector<HTMLInputElement>(
-    'input[name="subjectbox"]',
-  );
+  const subjectInput =
+    compose.querySelector<HTMLInputElement>(SUBJECT_SELECTOR);
   const subject = subjectInput?.value ?? "";
 
-  const bodyEl = compose.querySelector<HTMLElement>(
-    '[role="textbox"][aria-label*="Body" i], [role="textbox"][g_editable="true"], div[aria-label*="Message Body" i]',
-  );
-  const body = stripHtml(bodyEl?.innerHTML ?? "");
+  const bodyEl = findComposeBody(compose);
+  if (!bodyEl) throw new ComposeReadError("message body");
+  const body = stripHtml(bodyEl.innerHTML);
 
   const recipients = extractRecipients(compose);
 
@@ -127,6 +190,7 @@ export function extractComposeData(
   );
 
   const driveLinks = extractDriveLinks(compose);
+  const attachmentChips = countAttachmentChips(compose);
 
   return {
     subject,
@@ -146,6 +210,7 @@ export function extractComposeData(
         .sort()
         .join("|"),
       [...driveLinks].sort().join("|"),
+      String(attachmentChips),
     ].join(""),
   };
 }

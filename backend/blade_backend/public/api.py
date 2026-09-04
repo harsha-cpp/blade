@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -30,6 +31,7 @@ router = APIRouter()
 SIGNUP_STATUS_MAX_AGE_SECONDS = 60
 USER_AGENT_MAX_LENGTH = 300
 DEDUPE_WINDOW = timedelta(hours=24)
+RECENT_SUBMISSION_LIMIT = 20
 _UNAVAILABLE_DETAIL = "access requests cannot be accepted right now"
 
 
@@ -122,14 +124,27 @@ async def notify_access_request(recipient: str, fields: dict[str, str | None]) -
         logger.warning("access_request.notification_failed", to=recipient)
 
 
-async def _recent_duplicate(
+async def _recent_submissions(
     session: AsyncSession, email: str, now: datetime
-) -> AccessRequest | None:
-    return await session.scalar(
+) -> Sequence[AccessRequest]:
+    rows = await session.scalars(
         select(AccessRequest)
         .where(AccessRequest.email == email, AccessRequest.created_at >= now - DEDUPE_WINDOW)
         .order_by(AccessRequest.created_at.desc())
-        .limit(1)
+        .limit(RECENT_SUBMISSION_LIMIT)
+    )
+    return rows.all()
+
+
+def _comparable(value: str | None) -> str:
+    return " ".join((value or "").split()).casefold()
+
+
+def is_same_enquirer(stored: AccessRequest, candidate: AccessRequest) -> bool:
+    return (
+        _comparable(stored.name) == _comparable(candidate.name)
+        and _comparable(stored.phone) == _comparable(candidate.phone)
+        and _comparable(stored.organization) == _comparable(candidate.organization)
     )
 
 
@@ -166,7 +181,8 @@ async def _persist_access_request(
         user_agent=request.headers.get("user-agent"),
         created_at=now,
     )
-    existing = await _recent_duplicate(session, row.email, now)
+    recent = await _recent_submissions(session, row.email, now)
+    existing = next((stored for stored in recent if is_same_enquirer(stored, row)), None)
     if existing is not None:
         submitted = payload.message or ""
         if len(submitted) > len(existing.message or ""):
@@ -197,10 +213,14 @@ async def create_access_request(
     of the global middleware budget, and a filled `website` field is treated as
     a bot: the same 202 comes back and nothing at all is stored or mailed.
 
-    The same address inside 24 hours updates the existing row rather than
-    adding another, so a double-submitted form is one lead. The stored row is
-    the record of truth; the operator notification is best effort and a mail
-    failure never turns into an error for the visitor.
+    The same person at the same address inside 24 hours updates that row rather
+    than adding another, so a double-submitted form is one lead and only a
+    longer message overwrites what was stored. A different name, phone or
+    organisation is a different person sharing a mailbox: they get their own row
+    and their own notification, because dropping the second sender is how a
+    shared `info@` address loses a customer. The stored row is the record of
+    truth; the operator notification is best effort and a mail failure never
+    turns into an error for the visitor.
     """
     limit = await access_request_limiter.check(request)
     if not limit.allowed:

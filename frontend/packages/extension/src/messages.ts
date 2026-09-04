@@ -4,6 +4,8 @@ export const BACKEND_REQUEST_MESSAGE = "BACKEND_REQUEST";
 
 export const ATTACHMENT_INLINE_MAX_BYTES = 25 * 1024 * 1024;
 
+export const EVENT_MAX_ENTITIES = 500;
+
 const timeoutMsSchema = z.number().int().positive().max(120_000);
 
 const eventEntitySchema = z.object({
@@ -20,9 +22,9 @@ const eventRequestSchema = z.object({
   action: z.string().min(1),
   severity: z.string().min(1),
   riskScore: z.number(),
-  entities: z.array(eventEntitySchema),
+  entities: z.array(eventEntitySchema).max(EVENT_MAX_ENTITIES),
   recipients: z.array(z.string()),
-  timestamp: z.string(),
+  timestamp: z.string().optional(),
 });
 
 const attachmentUploadRequestSchema = z.object({

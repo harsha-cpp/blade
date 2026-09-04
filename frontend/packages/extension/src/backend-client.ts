@@ -43,6 +43,11 @@ export function retryDelayMs(err: unknown): number | null {
   return err.retryAfterMs ?? BACKEND_RETRY_AFTER_FALLBACK_MS;
 }
 
+export function backendFailureSummary(err: unknown): string {
+  if (!(err instanceof BackendRequestError)) return "unknown";
+  return err.status === undefined ? err.kind : `${err.kind} ${err.status}`;
+}
+
 export function backendFailureStep(err: unknown): string {
   if (isNotLinked(err))
     return "This install is not linked - checking locally...";
@@ -55,7 +60,8 @@ export function backendFailureStep(err: unknown): string {
 async function deliver(request: BackendRequest): Promise<BackendResult> {
   try {
     const response = (await chrome.runtime.sendMessage(request)) as
-      BackendResult | undefined;
+      | BackendResult
+      | undefined;
     if (!response) {
       return {
         ok: false,
@@ -111,5 +117,13 @@ export async function sendBackendRequest<T>(
 }
 
 export function sendBackendRequestAndForget(request: BackendRequest): void {
-  void deliver(request);
+  void deliver(request).then((result) => {
+    if (result.ok) return;
+    console.warn(
+      `[Blade] ${request.kind} report rejected:`,
+      result.status === undefined
+        ? result.kind
+        : `${result.kind} ${result.status}`,
+    );
+  });
 }

@@ -18,21 +18,20 @@ export interface PreparedBackendRequest {
   init: RequestInit;
 }
 
-type BackendRequestKind = BackendRequest["kind"];
-
-export function isDeviceAuthenticated(
-  credential: ScanCredential,
-  _kind: BackendRequestKind,
-): boolean {
+export function isDeviceAuthenticated(credential: ScanCredential): boolean {
   return credential.kind === "device";
 }
 
-function orgCodeSentWith(
+function orgCodeSentWith(credential: ScanCredential): string | null {
+  return credential.kind === "org_code" ? credential.orgCode : null;
+}
+
+function userEmailSentWith(
   credential: ScanCredential,
-  kind: BackendRequestKind,
-): string | null {
-  if (credential.kind === "org_code") return credential.orgCode;
-  return isDeviceAuthenticated(credential, kind) ? null : credential.orgCode;
+  userEmail: string | null,
+): { user_email?: string } {
+  if (credential.kind === "device" || !userEmail) return {};
+  return { user_email: userEmail };
 }
 
 function credentialHeaders(
@@ -73,7 +72,7 @@ export function prepareBackendRequest(
   request: BackendRequest,
   credential: ScanCredential,
 ): PreparedBackendRequest {
-  const orgCode = orgCodeSentWith(credential, request.kind);
+  const orgCode = orgCodeSentWith(credential);
   const orgCodeField = orgCode ? { org_code: orgCode } : {};
   const orgCodeQuery = orgCode
     ? `?org_code=${encodeURIComponent(orgCode)}`
@@ -86,13 +85,13 @@ export function prepareBackendRequest(
         init: jsonInit(credential, {
           ...orgCodeField,
           client_event_id: request.clientEventId,
-          ...(request.userEmail ? { user_email: request.userEmail } : {}),
+          ...userEmailSentWith(credential, request.userEmail),
           action: request.action,
           severity: request.severity,
           risk_score: request.riskScore,
           entities: request.entities,
           recipients: request.recipients,
-          timestamp: request.timestamp,
+          ...(request.timestamp ? { timestamp: request.timestamp } : {}),
         }),
       };
     case "attachment-upload":
@@ -120,7 +119,7 @@ export function prepareBackendRequest(
           subject: request.subject,
           body: request.body,
           recipients: request.recipients,
-          ...(request.userEmail ? { user_email: request.userEmail } : {}),
+          ...userEmailSentWith(credential, request.userEmail),
           attachment_scan_ids: request.attachmentScanIds,
         }),
       };
@@ -222,7 +221,7 @@ export async function executeBackendRequest(
   credential: ScanCredential,
 ): Promise<BackendResult> {
   const result = await sendBackendRequest(request, credential);
-  if (isDeviceAuthenticated(credential, request.kind)) {
+  if (isDeviceAuthenticated(credential)) {
     const outcome: AuthOutcome | null = authOutcomeForResult(
       result,
       Date.now(),

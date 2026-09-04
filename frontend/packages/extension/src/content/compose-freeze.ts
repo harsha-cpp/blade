@@ -1,3 +1,5 @@
+import { isBladeSurface } from "./compose-scope";
+
 const PASSTHROUGH_KEYS = new Set([
   "Tab",
   "Escape",
@@ -27,7 +29,10 @@ export function isPassiveKey(event: KeyboardEvent): boolean {
   );
 }
 
-export function freezeCompose(compose: Element): () => void {
+export function freezeCompose(
+  compose: Element,
+  sendGroup?: Element | null,
+): () => void {
   const swallow = (event: Event): void => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -38,10 +43,19 @@ export function freezeCompose(compose: Element): () => void {
     swallow(event);
   };
 
+  const onPointer = (event: Event): void => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (isBladeSurface(target)) return;
+    if (sendGroup && target && sendGroup.contains(target)) return;
+    swallow(event);
+  };
+
   compose.addEventListener("keydown", onKeyDown, true);
   compose.addEventListener("beforeinput", swallow, true);
   compose.addEventListener("paste", swallow, true);
   compose.addEventListener("drop", swallow, true);
+  compose.addEventListener("pointerdown", onPointer, true);
+  compose.addEventListener("click", onPointer, true);
   compose.setAttribute("aria-busy", "true");
 
   return () => {
@@ -49,6 +63,8 @@ export function freezeCompose(compose: Element): () => void {
     compose.removeEventListener("beforeinput", swallow, true);
     compose.removeEventListener("paste", swallow, true);
     compose.removeEventListener("drop", swallow, true);
+    compose.removeEventListener("pointerdown", onPointer, true);
+    compose.removeEventListener("click", onPointer, true);
     compose.removeAttribute("aria-busy");
   };
 }

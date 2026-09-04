@@ -1,6 +1,9 @@
+import {
+  BLADE_SURFACE_ATTRIBUTE,
+  SCAN_PROGRESS_SURFACE,
+  scopedSurfaceId,
+} from "./compose-scope";
 import { FONT_UI, palette } from "./theme";
-
-const STRIP_ID = "blade-scan-progress";
 
 export interface ScanProgress {
   setStep(text: string): void;
@@ -11,11 +14,13 @@ export function showScanProgress(
   compose: Element,
   onCancel: () => void,
 ): ScanProgress {
-  document.getElementById(STRIP_ID)?.remove();
+  const stripId = scopedSurfaceId(SCAN_PROGRESS_SURFACE, compose);
+  document.getElementById(stripId)?.remove();
   const PALETTE = palette();
 
   const strip = document.createElement("div");
-  strip.id = STRIP_ID;
+  strip.id = stripId;
+  strip.setAttribute(BLADE_SURFACE_ATTRIBUTE, SCAN_PROGRESS_SURFACE);
   strip.setAttribute("role", "status");
   strip.setAttribute("aria-live", "polite");
   strip.style.cssText = [

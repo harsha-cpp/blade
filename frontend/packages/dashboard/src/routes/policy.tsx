@@ -9,6 +9,7 @@ import {
   newRule,
   removeRule,
   renumber,
+  reseedDraft,
   seedDraft,
   toPolicySetIn,
   updateRule,
@@ -45,7 +46,9 @@ export default function PolicyRoute() {
 
   const adopt = useCallback((next: PolicySet) => {
     setBaseline(next);
-    setDraft(seedDraft(next.rules));
+    setDraft((previous) =>
+      previous ? reseedDraft(previous, next.rules) : seedDraft(next.rules),
+    );
   }, []);
 
   useEffect(() => {

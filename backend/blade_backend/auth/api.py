@@ -67,6 +67,8 @@ from blade_backend.settings import get_settings
 router = APIRouter()
 
 _ORG_CODE_BYTES = 18
+_ABSENT_MEMBER_PASSWORD = "blade-has-no-such-member-and-this-is-not-a-credential"
+_ABSENT_MEMBER_PASSWORD_HASH = hash_password(_ABSENT_MEMBER_PASSWORD)
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _SWITCH_DENIED_DETAIL = "no verified active membership in that org"
 _CROSS_SITE_DETAIL = "cross-site cookie request refused"
@@ -230,6 +232,15 @@ async def login(
     request: Request,
     session: DbSession,
 ) -> AuthResponse | MfaChallengeResponse:
+    """Exchange an address and a password for a session.
+
+    An address nobody holds is still checked against a fixed hash built at
+    import, so the reply takes the same argon2 verification either way: without
+    it the endpoint answers an unknown address in a millisecond and a known one
+    in fifty, which reads out the staff directory of a hospital. Repeated
+    failures write one audit row per window, on the same claim the lockout uses,
+    so an attacker cannot turn the log into an unbounded write.
+    """
     email = str(payload.email).lower().strip()
     limit = await login_rate_limiter.check(request, email)
     if not limit.allowed:
@@ -247,6 +258,11 @@ async def login(
         )
     members = await _login_members(session, email, payload.org_slug)
     if not members:
+        await asyncio.to_thread(
+            verify_password,
+            payload.password,
+            _ABSENT_MEMBER_PASSWORD_HASH,
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
     verified_members: list[OrgMember] = []
@@ -262,7 +278,8 @@ async def login(
             verified_members.append(candidate)
 
     if not verified_members:
-        await _audit_login(session, members=members, email=email, action="login_failed")
+        if await login_rate_limiter.claim_failure_audit(request, email):
+            await _audit_login(session, members=members, email=email, action="login_failed")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
     if payload.org_slug is None and len(verified_members) > 1:
         choices = await _org_choices(session, verified_members)
@@ -404,20 +421,17 @@ async def logout(response: Response, request: Request, session: DbSession) -> Re
     """Revoke the refresh family the cookie belongs to and clear the cookie.
 
     Origin-checked like `POST /auth/refresh`: the cookie is the only
-    credential, so another site must not be able to sign the caller out.
+    credential, so another site must not be able to sign the caller out. The
+    secret in the cookie is verified before anything is revoked, exactly as on
+    refresh: the token id alone is a bare identifier, and acting on it would let
+    anyone who learns one sign that family out of every device it holds.
     """
     _enforce_browser_origin(request)
     settings = get_settings()
-    refresh_cookie = read_refresh_cookie(request, settings)
-    if refresh_cookie:
-        try:
-            token_id, _ = parse_refresh_token(refresh_cookie)
-            record = await session.get(RefreshToken, token_id)
-            if record is not None:
-                await _revoke_family(session, record, datetime.now(UTC))
-                await session.commit()
-        except TokenError:
-            pass
+    record = await _authentic_refresh_token(session, read_refresh_cookie(request, settings))
+    if record is not None:
+        await _revoke_family(session, record, datetime.now(UTC))
+        await session.commit()
     clear_refresh_cookie(response, settings)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
@@ -844,6 +858,22 @@ async def _audit_login(
         )
     if seen_orgs:
         await session.commit()
+
+
+async def _authentic_refresh_token(
+    session: AsyncSession, cookie: str | None
+) -> RefreshToken | None:
+    if not cookie:
+        return None
+    try:
+        token_id, secret = parse_refresh_token(cookie)
+    except TokenError:
+        return None
+    record = await session.get(RefreshToken, token_id)
+    if record is None:
+        return None
+    verified = await asyncio.to_thread(verify_refresh_secret, secret, record.token_hash)
+    return record if verified else None
 
 
 async def _claim_rotation(session: AsyncSession, record: RefreshToken, now: datetime) -> bool:

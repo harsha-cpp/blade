@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Verdict } from "@bladedlp/shared";
 import { mountWarningModal } from "./mount";
 
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+async function settle(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(20);
 }
 
 const blocked: Verdict = {
@@ -19,11 +19,13 @@ const blocked: Verdict = {
 };
 
 beforeEach(() => {
+  vi.useFakeTimers();
   document.body.replaceChildren();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 

@@ -139,9 +139,12 @@ Implemented today:
   send-button clicks that would put patient data into an editable field.
 - **Dashboard.** Auth, organizations, domains, members, devices, policy editing
   and simulation, quarantine review, audit log, and detection analytics split by
-  channel and by site. Set the build-time `VITE_LANDING_URL` (read the same way
-  as `VITE_API_BASE_URL`) to point the sign-in page's request-access link at the
-  marketing site; leave it unset and it points at the in-app invitation notice.
+  channel and by site. `VITE_LANDING_URL` points the sign-in page's
+  request-access link at the marketing site; it is baked into the bundle at
+  build time exactly like `VITE_API_BASE_URL`, so pass it as a build arg
+  (`make images-dashboard VITE_LANDING_URL=https://tryblade.in`, or
+  `--build-arg VITE_LANDING_URL=...` on `infra/docker/dashboard.Dockerfile`).
+  Leave it unset and the link points at the in-app invitation notice.
 
 Not implemented, despite the code that looks like it is:
 `backend/blade_backend/observability/metrics.py` declares five Prometheus

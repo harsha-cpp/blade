@@ -84,6 +84,7 @@ _SENDER_CLASS_FOR_DOMAIN: dict[DomainClass, SenderClass] = {
 UPLOAD_CHUNK_BYTES = 256 * 1024
 TIMED_OUT_ATTACHMENT_ERROR = "attachment scan timed out"
 UNREADABLE_ATTACHMENT_ERROR = "attachment could not be scanned"
+UNSCANNED_SUBJECT_PLACEHOLDER = "[subject not scanned]"
 
 _SEVERITY_RANK: dict[str, int] = {
     "none": 0,
@@ -535,7 +536,7 @@ async def _detect_message(subject: str, body: str, recipients: list[str]) -> Mes
             severity="none",
             risk_score=0,
             unread_parts=1,
-            masked_subject=subject,
+            masked_subject=UNSCANNED_SUBJECT_PLACEHOLDER,
             entities=[],
         )
     return MessageDetection(

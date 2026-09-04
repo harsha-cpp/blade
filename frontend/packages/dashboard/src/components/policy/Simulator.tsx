@@ -25,10 +25,18 @@ import ActionPill from "../ActionPill";
 interface Outcome {
   result: SimulationResponse | null;
   error: string | null;
+  note: string | null;
   loading: boolean;
 }
 
-const EMPTY: Outcome = { result: null, error: null, loading: false };
+const EMPTY: Outcome = {
+  result: null,
+  error: null,
+  note: null,
+  loading: false,
+};
+
+const NO_RULES_NOTE = "Add at least one rule to preview your edits.";
 
 const SIMULATE_DEBOUNCE_MS = 400;
 
@@ -101,12 +109,18 @@ export default function Simulator({
             candidate: null,
           });
           if (!cancelled)
-            setSaved({ result: res, error: null, loading: false });
+            setSaved({
+              result: res,
+              error: null,
+              note: null,
+              loading: false,
+            });
         } catch (err) {
           if (!cancelled)
             setSaved({
               result: null,
               error: errorMessage(err),
+              note: null,
               loading: false,
             });
         }
@@ -119,7 +133,20 @@ export default function Simulator({
     };
   }, [scenario, savedKey]);
 
+  const hasDraftRules = draft.length > 0;
+
   useEffect(() => {
+    if (!hasDraftRules) {
+      setCandidate({
+        result: null,
+        error: null,
+        note: NO_RULES_NOTE,
+        loading: false,
+      });
+      onDraftMatches([]);
+      return;
+    }
+
     let cancelled = false;
     setCandidate((s) => ({ ...s, loading: true }));
 
@@ -131,7 +158,12 @@ export default function Simulator({
             candidate: toPolicySetIn(draftRef.current, version),
           });
           if (!cancelled) {
-            setCandidate({ result: res, error: null, loading: false });
+            setCandidate({
+              result: res,
+              error: null,
+              note: null,
+              loading: false,
+            });
             onDraftMatches(res.matched_policy_ids);
           }
         } catch (err) {
@@ -139,6 +171,7 @@ export default function Simulator({
             setCandidate({
               result: null,
               error: errorMessage(err),
+              note: null,
               loading: false,
             });
             onDraftMatches([]);
@@ -151,7 +184,7 @@ export default function Simulator({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [scenario, draftKey, version, onDraftMatches]);
+  }, [scenario, draftKey, hasDraftRules, version, onDraftMatches]);
 
   const changed =
     saved.result &&
@@ -319,6 +352,7 @@ function OutcomeBlock({
         {outcome.loading && <div className="spinner" />}
       </div>
       {outcome.error && <div className="error">{outcome.error}</div>}
+      {outcome.note && <div className="hint">{outcome.note}</div>}
       {outcome.result && (
         <div className="col gap-2">
           <div className="row gap-2">

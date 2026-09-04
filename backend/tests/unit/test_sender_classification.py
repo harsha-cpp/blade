@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from blade_backend.db.models import ApprovedDomain
+from blade_backend.db.models import ApprovedDomain, DomainClass
 from blade_backend.scan.api import _classify_sender
 
 ORG_ID = uuid4()
@@ -35,13 +35,13 @@ def _as_session(session: _FakeSession) -> AsyncSession:
     return cast(AsyncSession, cast(Any, session))
 
 
-def _domain(domain: str, classification: str) -> ApprovedDomain:
+def _domain(domain: str, classification: DomainClass) -> ApprovedDomain:
     return ApprovedDomain(
         id=uuid4(),
         org_id=ORG_ID,
         domain=domain,
         direction="both",
-        classification=classification,  # type: ignore[arg-type]
+        classification=classification,
         created_at=datetime.now(UTC),
     )
 

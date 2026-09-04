@@ -1,12 +1,19 @@
 import { detectPhi, type PhiHit } from "./phi";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
+function extensionAssetUrl(assetPath: string): string {
+  if (!assetPath.startsWith("/")) return assetPath;
+  if (typeof chrome === "undefined" || !chrome.runtime?.getURL)
+    return assetPath;
+  return chrome.runtime.getURL(assetPath);
+}
+
 let pdfLib: typeof import("pdfjs-dist") | null = null;
 
 async function getPdfLib(): Promise<typeof import("pdfjs-dist")> {
   if (pdfLib) return pdfLib;
   pdfLib = await import("pdfjs-dist");
-  pdfLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+  pdfLib.GlobalWorkerOptions.workerSrc = extensionAssetUrl(pdfWorkerUrl);
   return pdfLib;
 }
 

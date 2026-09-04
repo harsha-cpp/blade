@@ -14,7 +14,12 @@ import {
 } from "../api/quarantine";
 import { entitySummary } from "../lib/entities";
 import { durationSince, formatTime, senderLabel } from "../lib/format";
-import { decisionErrorMessage, isAlreadyDecided } from "../lib/quarantine";
+import {
+  EMPTY_DECISION_DRAFT,
+  decisionErrorMessage,
+  draftForItem,
+  isAlreadyDecided,
+} from "../lib/quarantine";
 import { errorMessage } from "../lib/errors";
 import PageHeader from "../components/PageHeader";
 import { SkeletonRows } from "../components/Skeletons";
@@ -22,6 +27,8 @@ import RiskMeter from "../components/RiskMeter";
 import SeverityPill from "../components/SeverityPill";
 
 type Filter = QuarantineStatusFilter;
+
+const QUEUE_POLL_MS = 20_000;
 
 const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: "pending", label: "Pending" },
@@ -34,8 +41,7 @@ export default function QuarantineRoute() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<Filter>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [note, setNote] = useState("");
-  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionDraft, setDecisionDraft] = useState(EMPTY_DECISION_DRAFT);
 
   const {
     data,
@@ -50,7 +56,10 @@ export default function QuarantineRoute() {
       quarantineApi.list({ status, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    refetchInterval: status === "pending" ? 20_000 : false,
+    refetchInterval: (query) =>
+      status === "pending" && (query.state.data?.pages.length ?? 1) <= 1
+        ? QUEUE_POLL_MS
+        : false,
   });
 
   const items = useMemo(
@@ -63,20 +72,28 @@ export default function QuarantineRoute() {
     [items, selectedId],
   );
 
+  const draft = draftForItem(decisionDraft, selected?.id ?? null);
+
   function decide(kind: "approve" | "reject", item: QuarantineItem) {
-    setDecisionError(null);
+    setDecisionDraft((prev) => ({
+      ...draftForItem(prev, item.id),
+      error: null,
+    }));
     const fn =
       kind === "approve" ? quarantineApi.approve : quarantineApi.reject;
-    return fn(item.id, note.trim() || undefined);
+    return fn(item.id, draft.note.trim() || undefined);
   }
 
   async function onDecided() {
-    setNote("");
+    setDecisionDraft(EMPTY_DECISION_DRAFT);
     await queryClient.invalidateQueries({ queryKey: ["quarantine"] });
   }
 
-  async function onDecisionFailed(err: unknown) {
-    setDecisionError(decisionErrorMessage(err));
+  async function onDecisionFailed(err: unknown, item: QuarantineItem) {
+    setDecisionDraft((prev) => ({
+      ...draftForItem(prev, item.id),
+      error: decisionErrorMessage(err),
+    }));
     if (isAlreadyDecided(err)) {
       await queryClient.invalidateQueries({ queryKey: ["quarantine"] });
     }
@@ -169,7 +186,6 @@ export default function QuarantineRoute() {
                       }
                       tabIndex={0}
                       aria-current={item.id === selected?.id}
-                      aria-label={`Review the message from ${senderLabel(item.sender)}`}
                       onClick={() => setSelectedId(item.id)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -238,9 +254,15 @@ export default function QuarantineRoute() {
           {selected ? (
             <Detail
               item={selected}
-              note={note}
-              setNote={setNote}
-              error={decisionError}
+              note={draft.note}
+              setNote={(value) =>
+                setDecisionDraft({
+                  itemId: selected.id,
+                  note: value,
+                  error: draft.error,
+                })
+              }
+              error={draft.error}
               approving={approve.isPending}
               rejecting={reject.isPending}
               onApprove={() => approve.mutate(selected)}

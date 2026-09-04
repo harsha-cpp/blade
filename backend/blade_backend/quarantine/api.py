@@ -8,7 +8,12 @@ from fastapi import APIRouter, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, update
 
-from blade_backend.api.pagination import decode_cursor, encode_cursor
+from blade_backend.api.pagination import (
+    MAX_PAGE_SIZE,
+    decode_cursor,
+    empty_page_items,
+    encode_cursor,
+)
 from blade_backend.audit.service import write_audit_event
 from blade_backend.db.models import QuarantineItem
 from blade_backend.deps import CurrentMember, DbSession, Principal, QuarantineReviewer
@@ -16,8 +21,6 @@ from blade_backend.scan.credentials import principal_for_request
 from blade_backend.scan.limits import enforce_scan_limit
 
 router = APIRouter()
-
-MAX_PAGE_SIZE = 200
 
 QuarantineStatus = Literal["pending", "approved", "rejected"]
 QuarantineStatusFilter = Literal["pending", "approved", "rejected", "all"]
@@ -49,12 +52,8 @@ class QuarantineDecisionIn(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
-def _empty_items() -> list[QuarantineItemOut]:
-    return []
-
-
 class QuarantinePage(BaseModel):
-    items: list[QuarantineItemOut] = Field(default_factory=_empty_items)
+    items: list[QuarantineItemOut] = Field(default_factory=empty_page_items(QuarantineItemOut))
     next_cursor: str | None = None
 
 

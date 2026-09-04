@@ -113,6 +113,11 @@ describe("toCsv formula injection", () => {
     );
   });
 
+  it("leaves a negative number alone, since a number cannot be a formula", () => {
+    expect(toCsv(["a"], [[-1]])).toBe('"a"\r\n"-1"');
+    expect(toCsv(["a"], [[-0.5]])).toBe('"a"\r\n"-0.5"');
+  });
+
   it("leaves ordinary cells alone", () => {
     expect(toCsv(["a"], [["nurse@hospital.example"]])).toBe(
       '"a"\r\n"nurse@hospital.example"',

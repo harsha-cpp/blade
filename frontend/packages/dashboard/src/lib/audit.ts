@@ -1,5 +1,5 @@
-import type { AuditEvent } from "../api/audit";
-import { toCsv } from "./format";
+import type { AuditEvent, ChainBreakKind, ChainStatus } from "../api/audit";
+import { formatTime, toCsv } from "./format";
 
 export const AUDIT_CATEGORIES = [
   "auth",
@@ -74,6 +74,87 @@ export function applyFilters(
 
 export function distinctActors(rows: AuditEvent[]): string[] {
   return Array.from(new Set(rows.map((r) => r.actor))).sort();
+}
+
+export function nextActorOptions(
+  known: string[],
+  rows: AuditEvent[],
+  filtersActive: boolean,
+): string[] {
+  return filtersActive ? known : distinctActors(rows);
+}
+
+export function actorFilterOptions(
+  known: string[],
+  selected: string,
+): string[] {
+  if (!selected || known.includes(selected)) return known;
+  return [...known, selected].sort();
+}
+
+export const CHAIN_FAILURE_COPY: Record<ChainBreakKind, string> = {
+  chain: "A row's hash no longer matches the row before it.",
+  row_hmac: "A row's signature does not match the row it covers.",
+};
+
+export interface ChainBanner {
+  ok: boolean;
+  headline: string;
+  notes: string[];
+}
+
+export function chainBanner(status: ChainStatus): ChainBanner {
+  const notes: string[] = [];
+  const signed = Math.max(0, status.checked - status.legacy);
+
+  if (!status.ok) {
+    notes.push(
+      status.detail ??
+        CHAIN_FAILURE_COPY[status.failed_check ?? "chain"] ??
+        CHAIN_FAILURE_COPY.chain,
+    );
+    notes.push(`Checked ${status.checked} entries server-side.`);
+    notes.push(verificationNote(status));
+    notes.push("Treat this log as suspect and escalate.");
+    const entry = status.broken_at ?? status.checked;
+    return {
+      ok: false,
+      headline:
+        status.failed_check === "row_hmac"
+          ? `Row signature check failed at entry ${entry}.`
+          : `Chain verification failed at entry ${entry}.`,
+      notes,
+    };
+  }
+
+  if (status.legacy > 0) {
+    notes.push(
+      "Every row's hash still covers the one before it across the whole log.",
+    );
+    notes.push(verificationNote(status));
+    return {
+      ok: true,
+      headline: `${signed} of ${status.checked} rows carry a signature; ${status.legacy} predate signing.`,
+      notes,
+    };
+  }
+
+  notes.push(
+    "Every row's hash covers the one before it across the whole log, not just this page.",
+  );
+  notes.push(verificationNote(status));
+  return {
+    ok: true,
+    headline: `All ${status.checked} entries verified server-side.`,
+    notes,
+  };
+}
+
+function verificationNote(status: ChainStatus): string {
+  const at = `Verified ${formatTime(status.verified_at)}.`;
+  return status.cached
+    ? `${at} Cached result, recomputed at most once a minute.`
+    : at;
 }
 
 export function auditCsv(rows: AuditEvent[]): string {

@@ -37,7 +37,10 @@ def term_pattern(terms: tuple[str, ...]) -> re.Pattern[str] | None:
     if not terms:
         return None
     escaped = sorted((re.escape(term) for term in terms), key=len, reverse=True)
-    return re.compile(r"(?<!\w)(?:" + "|".join(escaped) + r")(?!\w)", re.IGNORECASE)
+    return re.compile(
+        r"(?<![A-Za-z0-9_])(?:" + "|".join(escaped) + r")(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
 
 
 def _window(text: str, start: int, end: int, radius: int) -> str:
@@ -54,12 +57,16 @@ def _score(rule: Rule, text: str, start: int, end: int) -> tuple[float, bool] | 
 
     negative = term_pattern(tuple(rule.negative_terms))
     has_negative = bool(negative.search(window)) if negative else False
+    weak_negative = term_pattern(tuple(rule.weak_negative_terms))
+    has_weak_negative = bool(weak_negative.search(window)) if weak_negative else False
 
     confidence = rule.base_confidence
     if has_context:
         confidence += rule.context_boost
     if has_negative:
         confidence -= rule.negative_penalty
+    elif has_weak_negative:
+        confidence -= rule.weak_negative_penalty
 
     confidence = max(0.0, min(1.0, confidence))
     if confidence < MIN_CONFIDENCE:

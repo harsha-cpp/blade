@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from blade_backend.auth import mfa_api
-from blade_backend.auth.mfa import encrypt_secret, generate_secret, issue_challenge_token
+from blade_backend.auth.mfa import (
+    decode_challenge_token,
+    encrypt_secret,
+    generate_secret,
+    issue_challenge_token,
+)
 from blade_backend.auth.mfa_api import MfaVerifyRequest, verify_mfa
 from blade_backend.auth.rate_limit import MFA_MAX_ATTEMPTS, MfaChallengeGuard
 from blade_backend.db.models import MemberMfa, Organization, OrgMember
@@ -112,7 +117,7 @@ async def test_a_challenge_cannot_buy_a_second_session(guard: MfaChallengeGuard)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "mfa challenge already used"
-    assert await guard.is_spent("") is False
+    assert await guard.is_spent(decode_challenge_token(challenge_token).challenge_id) is True
 
 
 @pytest.mark.unit

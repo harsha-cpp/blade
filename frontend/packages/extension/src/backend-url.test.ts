@@ -6,9 +6,25 @@ import {
 } from "./backend-url";
 
 describe("backend target resolution", () => {
-  it("defaults to localhost in development and to the production host otherwise", () => {
+  it("defaults to localhost in development", () => {
     expect(resolveBackendTarget(undefined, true).url).toBe(DEV_BACKEND_URL);
-    expect(resolveBackendTarget("", false).url).toBe(PROD_BACKEND_URL);
+    expect(resolveBackendTarget("", true).url).toBe(DEV_BACKEND_URL);
+  });
+
+  it("names the launch backend as the production host", () => {
+    expect(PROD_BACKEND_URL).toBe("https://api.tryblade.in");
+  });
+
+  it("refuses to build for production without an explicit backend", () => {
+    expect(() => resolveBackendTarget(undefined, false)).toThrow(
+      /must be set for a production build/,
+    );
+    expect(() => resolveBackendTarget("", false)).toThrow(
+      /must be set for a production build/,
+    );
+    expect(() => resolveBackendTarget("   ", false)).toThrow(
+      /must be set for a production build/,
+    );
   });
 
   it("derives the manifest host permission from the same value as the runtime URL", () => {

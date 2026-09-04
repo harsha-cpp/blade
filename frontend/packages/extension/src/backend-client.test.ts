@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   backendFailureStep,
+  backendFailureSummary,
   BackendRequestError,
   isAttachmentRejected,
   retryDelayMs,
   sendBackendRequest,
   sendBackendRequestAndForget,
 } from "./backend-client";
-import { BACKEND_RETRY_AFTER_FALLBACK_MS } from "./config";
+import {
+  BACKEND_MESSAGE_GRACE_MS,
+  BACKEND_RETRY_AFTER_FALLBACK_MS,
+} from "./config";
 import { BACKEND_REQUEST_MESSAGE, type BackendRequest } from "./messages";
 
 function statusRequest(timeoutMs = 5_000): BackendRequest {
@@ -82,7 +86,24 @@ describe("backend requests from the page context", () => {
     const pending = sendBackendRequest(statusRequest(1_000)).catch(
       (err: unknown) => err,
     );
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(1_000 + BACKEND_MESSAGE_GRACE_MS + 1);
+    expect(await pending).toMatchObject({ kind: "timeout" });
+  });
+
+  it("waits out a cold service worker before calling it a timeout", async () => {
+    vi.useFakeTimers();
+    stubSendMessage(() => new Promise(() => undefined));
+    let settled = false;
+    const pending = sendBackendRequest(statusRequest(1_000))
+      .catch((err: unknown) => err)
+      .finally(() => {
+        settled = true;
+      });
+
+    await vi.advanceTimersByTimeAsync(1_000 + 2_000);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(BACKEND_MESSAGE_GRACE_MS);
     expect(await pending).toMatchObject({ kind: "timeout" });
   });
 
@@ -113,6 +134,52 @@ describe("backend requests from the page context", () => {
       throw new Error("Receiving end does not exist");
     });
     expect(() => sendBackendRequestAndForget(statusRequest())).not.toThrow();
+  });
+
+  it("warns when a fire and forget report is rejected", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    stubSendMessage(async () => ({
+      ok: false,
+      kind: "http",
+      status: 422,
+      detail: "recipient rao@hospital.in is not an address",
+    }));
+
+    sendBackendRequestAndForget(statusRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warn).toHaveBeenCalledWith(
+      "[Blade] quarantine-status report rejected:",
+      "http 422",
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("rao@hospital.in");
+  });
+
+  it("says nothing when a fire and forget report is accepted", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    warn.mockClear();
+    stubSendMessage(async () => ({ ok: true, status: 202, body: null }));
+
+    sendBackendRequestAndForget(statusRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("summarising a backend failure for the page console", () => {
+  it("names the kind and the status and nothing else", () => {
+    expect(
+      backendFailureSummary(
+        new BackendRequestError("http", 422, "recipient rao@hospital.in"),
+      ),
+    ).toBe("http 422");
+    expect(backendFailureSummary(new BackendRequestError("network"))).toBe(
+      "network",
+    );
+    expect(backendFailureSummary(new Error("boom"))).toBe("unknown");
   });
 });
 

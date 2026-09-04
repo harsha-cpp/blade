@@ -5,7 +5,7 @@ from collections import OrderedDict, deque
 from collections.abc import Sequence
 from typing import cast
 
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
@@ -160,16 +160,70 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def deduplicate_vary(headers: MutableHeaders) -> None:
+    raw = headers.get("vary")
+    if raw is None:
+        return
+    unique: list[str] = []
+    seen: set[str] = set()
+    for candidate in raw.split(","):
+        value = candidate.strip()
+        if value and value.lower() not in seen:
+            seen.add(value.lower())
+            unique.append(value)
+    headers["vary"] = ", ".join(unique)
+
+
+class _UncredentialedCorsSend:
+    def __init__(self, send: Send, *, strip_credentials: bool) -> None:
+        self._send = send
+        self._strip_credentials = strip_credentials
+
+    async def send(self, message: Message) -> None:
+        if message["type"] != "http.response.start":
+            await self._send(message)
+            return
+        message.setdefault("headers", [])
+        headers = MutableHeaders(scope=message)
+        if self._strip_credentials:
+            del headers["access-control-allow-credentials"]
+        deduplicate_vary(headers)
+        await self._send(message)
+
+
 class PathScopedCORSMiddleware(CORSMiddleware):
-    def __init__(self, app: ASGIApp, *, paths: Sequence[str], **options: object) -> None:
-        super().__init__(app, **options)  # pyright: ignore[reportArgumentType]
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        paths: Sequence[str],
+        allow_origins: Sequence[str] = (),
+        allow_methods: Sequence[str] = ("GET",),
+        allow_headers: Sequence[str] = (),
+        allow_credentials: bool = False,
+        max_age: int = 600,
+    ) -> None:
+        super().__init__(
+            app,
+            allow_origins=allow_origins,
+            allow_methods=allow_methods,
+            allow_headers=allow_headers,
+            allow_credentials=allow_credentials,
+            max_age=max_age,
+        )
         self._paths = tuple(paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or str(scope.get("path", "")).rstrip("/") not in self._paths:
             await self.app(scope, receive, send)
             return
-        await super().__call__(scope, receive, send)
+        origin = Headers(scope=scope).get("origin")
+        scoped = origin is not None and self.is_allowed_origin(origin=origin)
+        guard = _UncredentialedCorsSend(
+            send,
+            strip_credentials=scoped and not self.allow_credentials,
+        )
+        await super().__call__(scope, receive, guard.send)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

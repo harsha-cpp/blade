@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from blade_backend.db.models import ApprovedDomain, Organization
+from blade_backend.db.models import ApprovedDomain, DomainClass, DomainDirection, Organization
 from blade_backend.public.api import get_public_config
 from blade_backend.settings import Settings
 
@@ -30,13 +32,17 @@ class _FakeSession:
         return _ScalarRows(self.domains)
 
 
-def _domain(domain: str, direction: str, classification: str) -> ApprovedDomain:
+def _as_session(session: _FakeSession) -> AsyncSession:
+    return cast(AsyncSession, cast(Any, session))
+
+
+def _domain(domain: str, direction: DomainDirection, classification: DomainClass) -> ApprovedDomain:
     return ApprovedDomain(
         id=uuid4(),
         org_id=uuid4(),
         domain=domain,
-        direction=direction,  # type: ignore[arg-type]
-        classification=classification,  # type: ignore[arg-type]
+        direction=direction,
+        classification=classification,
         created_at=datetime.now(UTC),
     )
 
@@ -53,7 +59,7 @@ async def test_public_config_never_returns_blocked_or_sender_only_domains_as_all
         ],
     )
 
-    config = await get_public_config("bld-abc123", session)  # type: ignore[arg-type]
+    config = await get_public_config("bld-abc123", _as_session(session))
 
     assert [domain.domain for domain in config.domains] == ["allowed.example"]
     assert [domain.domain for domain in config.blocked_domains] == ["blocked.example"]

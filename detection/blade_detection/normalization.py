@@ -2,47 +2,25 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Final
 
-ZERO_WIDTH_CHARACTERS: Final[frozenset[str]] = frozenset({"\u200b", "\u200c", "\u200d", "\ufeff"})
+_INVISIBLE_CHARACTERS: Final[tuple[str, ...]] = (
+    "\u00ad",
+    "\u034f",
+    "\u180e",
+    "\u200b",
+    "\u200c",
+    "\u200d",
+    "\u2060",
+    "\ufeff",
+)
 
-DECIMAL_DIGIT_BLOCK_STARTS: Final[tuple[int, ...]] = (
-    0x0660,
-    0x06F0,
-    0x07C0,
-    0x0966,
-    0x09E6,
-    0x0A66,
-    0x0AE6,
-    0x0B66,
-    0x0BE6,
-    0x0C66,
-    0x0CE6,
-    0x0D66,
-    0x0DE6,
-    0x0E50,
-    0x0ED0,
-    0x0F20,
-    0x1040,
-    0x1090,
-    0x17E0,
-    0x1810,
-    0x1946,
-    0x19D0,
-    0x1A80,
-    0x1A90,
-    0x1B50,
-    0x1BB0,
-    0x1C40,
-    0x1C50,
-    0xA620,
-    0xA8D0,
-    0xA900,
-    0xA9D0,
-    0xA9F0,
-    0xAA50,
-    0xABF0,
-    0xFF10,
+_INVISIBLE_RANGES: Final[tuple[tuple[int, int], ...]] = ((0x2061, 0x2064), (0xFE00, 0xFE0F))
+
+ZERO_WIDTH_CHARACTERS: Final[frozenset[str]] = frozenset(
+    set(_INVISIBLE_CHARACTERS)
+    | {chr(code) for first, last in _INVISIBLE_RANGES for code in range(first, last + 1)}
 )
 
 
@@ -57,18 +35,28 @@ class FoldedText:
             return start, end
         return self.offsets[start], self.offsets[end]
 
-    def original_slice(self, start: int, end: int) -> str:
-        source_start, source_end = self.original_span(start, end)
-        return self.source[source_start:source_end]
+
+MAX_CODE_POINT: Final[int] = 0x110000
+
+
+@lru_cache(maxsize=1)
+def decimal_digits() -> dict[str, str]:
+    return {
+        character: str(unicodedata.decimal(character))
+        for character in map(chr, range(MAX_CODE_POINT))
+        if unicodedata.category(character) == "Nd"
+    }
+
+
+@lru_cache(maxsize=1)
+def decimal_digit_block_starts() -> tuple[int, ...]:
+    return tuple(
+        sorted(ord(character) for character, digit in decimal_digits().items() if digit == "0")
+    )
 
 
 def ascii_digit(character: str) -> str | None:
-    code_point = ord(character)
-    for start in DECIMAL_DIGIT_BLOCK_STARTS:
-        offset = code_point - start
-        if 0 <= offset <= 9:
-            return str(offset)
-    return None
+    return decimal_digits().get(character)
 
 
 def _fold_character(character: str) -> str:

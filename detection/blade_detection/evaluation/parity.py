@@ -26,6 +26,11 @@ FIXTURE_PATH: Final[Path] = (
 
 SERVER_ONLY_RULES: Final[list[str]] = ["spacy-ner", "mrn-tenant-*"]
 
+BROWSER_VALIDATOR_DIVERGENCES: Final[list[str]] = [
+    "icd10: the browser accepts any subcode under a known category because the "
+    "full ICD-10-CM item list is about 1 MB of JSON",
+]
+
 UNICODE_CASES: Final[tuple[tuple[str, str], ...]] = (
     (
         "unicode.aadhaar-devanagari-digits",
@@ -53,17 +58,60 @@ UNICODE_CASES: Final[tuple[tuple[str, str], ...]] = (
         "Patient mobile number \u096f\u096e\u096a\u096b\u0967\u0968"
         "\u0969\u096a\u096b\u096c for follow up.",
     ),
+    (
+        "unicode.context-term-after-devanagari-bank",
+        "\u092c\u0948\u0902\u0915bank branch code TEMP0000123 for the refund.",
+    ),
+    (
+        "unicode.context-term-after-devanagari-passport",
+        "\u092a\u093e\u0938\u092a\u094b\u0930\u094d\u091fpassport M8231765 checked at immigration.",
+    ),
+    (
+        "unicode.context-term-after-devanagari-abha",
+        "\u0938\u094d\u0935\u093e\u0938\u094d\u0925\u094d\u092f"
+        "abha 91234567890123 registered today.",
+    ),
+    (
+        "unicode.context-term-after-devanagari-voter",
+        "\u092e\u0924\u0926\u093e\u0928voter epic ABC1234567 verified.",
+    ),
+    (
+        "unicode.context-term-after-devanagari-patient",
+        "\u0905\u0938\u094d\u092a\u0924\u093e\u0932patient diagnosis E11 recorded at discharge.",
+    ),
+    (
+        "unicode.astral-emoji-before-aadhaar",
+        "\U0001f4ce Aadhaar 7534 7930 7460 issued at the enrolment camp.",
+    ),
+    (
+        "unicode.astral-family-emoji-before-pan",
+        "\U0001f468\u200d\U0001f469\u200d\U0001f467 PAN HKPPS5875Q filed with form 16.",
+    ),
+    (
+        "unicode.astral-emoji-between-two-identifiers",
+        "UHID 0024518 \U0001f4ce Aadhaar 7534 7930 7460 \U0001f9ea sample no LAB2024991.",
+    ),
 )
 
 _FIXTURE_CONFIG: Final[DetectionConfig] = DetectionConfig(nlp=NlpConfig(use_ner=False))
 
 
-def _entity_record(entity: Entity) -> dict[str, Any]:
+def _utf16_offset(text: str, index: int | None) -> int | None:
+    if index is None:
+        return None
+    return len(text[:index].encode("utf-16-le")) // 2
+
+
+def _entity_record(entity: Entity, text: str) -> dict[str, Any]:
     return {
         "type": entity.type,
         "start": entity.start,
         "end": entity.end,
+        "utf16Start": _utf16_offset(text, entity.start),
+        "utf16End": _utf16_offset(text, entity.end),
         "maskedValue": entity.masked_value,
+        "valueHash": entity.value_hash,
+        "confidence": entity.confidence,
     }
 
 
@@ -72,7 +120,7 @@ def _case(case_id: str, text: str) -> dict[str, Any]:
     return {
         "id": case_id,
         "text": text,
-        "entities": [_entity_record(entity) for entity in detected],
+        "entities": [_entity_record(entity, text) for entity in detected],
     }
 
 
@@ -95,6 +143,7 @@ def build_fixture() -> dict[str, Any]:
     return {
         "version": RULE_PACK_VERSION,
         "serverOnlyRules": SERVER_ONLY_RULES,
+        "browserValidatorDivergences": BROWSER_VALIDATOR_DIVERGENCES,
         "cases": cases,
     }
 

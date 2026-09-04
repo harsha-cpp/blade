@@ -14,23 +14,26 @@ import UseCases from "@/components/UseCases";
 
 export default function Home() {
   return (
-    <div
-      id="main"
-      className="relative flex w-full flex-col items-center overflow-clip bg-ink"
-    >
+    <div className="relative flex w-full flex-col items-center overflow-clip bg-ink">
       <Nav />
-      <Hero />
-      <Dashboard />
-      <LogoStrip />
-      <Bottleneck />
-      <Stripes />
-      <HowItWorks />
-      <Features />
-      <Roi />
-      <CoordinationLayer />
-      <UseCases />
-      <Integrations />
-      <FinalCta />
+      <main
+        id="main"
+        tabIndex={-1}
+        className="flex w-full flex-col items-center"
+      >
+        <Hero />
+        <Dashboard />
+        <LogoStrip />
+        <Bottleneck />
+        <Stripes />
+        <HowItWorks />
+        <Features />
+        <Roi />
+        <CoordinationLayer />
+        <UseCases />
+        <Integrations />
+        <FinalCta />
+      </main>
       <Footer />
     </div>
   );

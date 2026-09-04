@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchDeviceConfig } from "./background/config-fetch";
 import { DEVICE_TOKEN_STORAGE_KEY } from "./device-token";
 
 const sources = import.meta.glob("./**/*.{ts,tsx}", {
@@ -94,5 +95,39 @@ describe("device token reach", () => {
       "./background/credentials.ts",
       "./popup/index.tsx",
     ]);
+  });
+});
+
+describe("the cached config a content script can read", () => {
+  const TOKEN = "bladedev_0192abcd.secretsecretsecretsecret";
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("carries no part of the device token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              device: { id: "d1", label: "Ward laptop" },
+              organization: { name: "Shape Hospital" },
+              config: { domains: [{ domain: "shapehospital.in" }] },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    const result = await fetchDeviceConfig(TOKEN, "BLD-ABC123");
+    if (result.status !== "ok") throw new Error("expected ok");
+    const serialized = JSON.stringify(result.config);
+
+    for (let start = 0; start + 6 <= TOKEN.length; start += 1) {
+      expect(serialized).not.toContain(TOKEN.slice(start, start + 6));
+    }
   });
 });

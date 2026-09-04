@@ -8,6 +8,7 @@ import {
 } from "../api/domains";
 import { errorMessage } from "../lib/errors";
 import { useAuth } from "../lib/auth";
+import { useDialogFocus } from "../lib/use-dialog-focus";
 import PageHeader from "../components/PageHeader";
 import { SkeletonLines } from "../components/Skeletons";
 
@@ -71,6 +72,10 @@ export default function DomainsRoute() {
     setRemoveError(null);
     setConfirmRemove(entry);
   }
+
+  const removeDialogRef = useDialogFocus<HTMLDivElement>(
+    confirmRemove !== null,
+  );
 
   useEffect(() => {
     if (!confirmRemove) return;
@@ -362,6 +367,7 @@ export default function DomainsRoute() {
       {confirmRemove ? (
         <div className="dialog-scrim" role="presentation">
           <div
+            ref={removeDialogRef}
             className="dialog"
             role="dialog"
             aria-modal="true"

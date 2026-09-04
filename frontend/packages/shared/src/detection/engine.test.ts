@@ -13,8 +13,12 @@ import { validateIcd10, validateIfscKnownBank } from "./validators";
 
 const DEVANAGARI_AADHAAR =
   "\u096d\u096b\u0969\u096a \u096d\u096f\u0969\u0966 \u096d\u096a\u096c\u0966";
+const DEVANAGARI_AADHAAR_ALT =
+  "\u0968\u096e\u096a\u096c \u0967\u0966\u096b\u0969 \u096d\u096a\u096c\u0966";
 const DEVANAGARI_AADHAAR_LABEL = "\u0906\u0927\u093e\u0930";
 const ZERO_WIDTH_JOINER = "\u200d";
+const PAPERCLIP_EMOJI = "\u{1f4ce}";
+const FAMILY_EMOJI = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
 
 const icd10Categories = new Set(RULE_PACK.icd10Categories);
 const ifscBankCodes = new Set(RULE_PACK.ifscBankCodes);
@@ -90,6 +94,21 @@ describe("scoring dedupe", () => {
     expect(distinct.risk).toBeGreaterThan(repeated.risk);
   });
 
+  it("counts two devanagari aadhaars as two distinct values", () => {
+    expect(
+      valueFingerprint("IN_AADHAAR", DEVANAGARI_AADHAAR),
+    ).not.toBe(valueFingerprint("IN_AADHAAR", DEVANAGARI_AADHAAR_ALT));
+    const distinct = scoreEntities([
+      entity("IN_AADHAAR", "**********7460", DEVANAGARI_AADHAAR),
+      entity("IN_AADHAAR", "**********7460", DEVANAGARI_AADHAAR_ALT),
+    ]);
+    const repeated = scoreEntities([
+      entity("IN_AADHAAR", "**********7460", DEVANAGARI_AADHAAR),
+      entity("IN_AADHAAR", "**********7460", DEVANAGARI_AADHAAR),
+    ]);
+    expect(distinct.risk).toBeGreaterThan(repeated.risk);
+  });
+
   it("falls back to the masked value when no hash is carried", () => {
     const scored = scoreEntities([
       {
@@ -124,7 +143,14 @@ describe("icd10 validation", () => {
 describe("ifsc validation", () => {
   it("recognises bundled bank codes", () => {
     expect(validateIfscKnownBank("HDFC0001234", ifscBankCodes)).toBe(true);
+    expect(validateIfscKnownBank("IBKL0001234", ifscBankCodes)).toBe(true);
     expect(validateIfscKnownBank("TEMP0000123", ifscBankCodes)).toBe(false);
+  });
+
+  it("detects an idbi bank ifsc without extra context", () => {
+    expect(detect("credit IBKL0001234").map((hit) => hit.type)).toContain(
+      "IN_IFSC",
+    );
   });
 
   it("needs banking context for an unlisted prefix", () => {
@@ -174,12 +200,37 @@ describe("person rules", () => {
     ).toContain("DATE_OF_BIRTH");
   });
 
-  it("keeps a checksum valid aadhaar despite commercial vocabulary", () => {
+  it("reports the name span, not the label span, when they repeat", () => {
+    const cases: [string, string][] = [
+      ["Patient Name: Patient", "Patient"],
+      ["Beneficiary name: Beneficiary", "Beneficiary"],
+    ];
+    for (const [text, value] of cases) {
+      const person = detect(text).find((hit) => hit.type === "PERSON");
+      expect(person, `no PERSON detected in ${text}`).toBeDefined();
+      expect(text.slice(person!.start, person!.end)).toBe(value);
+      expect(person!.start).toBe(text.lastIndexOf(value));
+    }
+  });
+
+  it("keeps a checksum valid aadhaar despite a weak negative term", () => {
     expect(
       detect("Sharing the number 7534 7930 7460 for your reference.").map(
         (hit) => hit.type,
       ),
     ).toContain("IN_AADHAAR");
+  });
+
+  it("drops a verhoeff valid number surrounded by commercial vocabulary", () => {
+    const commercial = [
+      "Invoice no 812806192057 raised against the purchase order",
+      "Vendor transaction id 748233725236 was settled against the GST invoice.",
+    ];
+    for (const text of commercial) {
+      expect(detect(text).map((hit) => hit.type), text).not.toContain(
+        "IN_AADHAAR",
+      );
+    }
   });
 });
 
@@ -201,6 +252,41 @@ describe("unicode folding", () => {
     );
   });
 
+  it("keeps identifiers whole across every folded invisible character", () => {
+    const invisibles = [
+      "\u00ad",
+      "\u034f",
+      "\u180e",
+      "\u2060",
+      "\u2061",
+      "\u2064",
+      "\ufe00",
+      "\ufe0f",
+    ];
+    for (const invisible of invisibles) {
+      expect(
+        detect(`PAN HKP${invisible}PS5875Q filed with form 16.`).map(
+          (hit) => hit.type,
+        ),
+      ).toContain("IN_PAN");
+      expect(
+        detect(`Aadhaar 7534 79${invisible}30 7460 issued.`).map(
+          (hit) => hit.type,
+        ),
+      ).toContain("IN_AADHAAR");
+    }
+  });
+
+  it("folds adlam digits, which live outside the basic plane", () => {
+    const adlam = [..."753479307460"]
+      .map((digit) => String.fromCodePoint(0x1e950 + Number(digit)))
+      .join("");
+    const text = `Aadhaar ${adlam} issued.`;
+    const aadhaar = detect(text).find((hit) => hit.type === "IN_AADHAAR");
+    expect(aadhaar, "no aadhaar detected in adlam digits").toBeDefined();
+    expect(text.slice(aadhaar!.start, aadhaar!.end)).toBe(adlam);
+  });
+
   it("detects a pan split by a zero width joiner", () => {
     const hits = detect(
       `PAN HKP${ZERO_WIDTH_JOINER}PS5875Q filed with form 16.`,
@@ -212,5 +298,21 @@ describe("unicode folding", () => {
     const text = `${DEVANAGARI_AADHAAR_LABEL} 7534 7930 7460 issued.`;
     const aadhaar = detect(text).find((hit) => hit.type === "IN_AADHAAR")!;
     expect(text.slice(aadhaar.start, aadhaar.end)).toBe("7534 7930 7460");
+  });
+
+  it("keeps utf-16 spans exact after an astral emoji", () => {
+    const text = `${PAPERCLIP_EMOJI} Aadhaar 7534 7930 7460 issued.`;
+    const aadhaar = detect(text).find((hit) => hit.type === "IN_AADHAAR")!;
+    expect([aadhaar.start, aadhaar.end]).toEqual([11, 25]);
+    expect(text.slice(aadhaar.start, aadhaar.end)).toBe("7534 7930 7460");
+    expect(aadhaar.masked_value).toBe("**********7460");
+  });
+
+  it("keeps utf-16 spans exact after a zwj family emoji", () => {
+    const text = `${FAMILY_EMOJI} PAN HKPPS5875Q filed with form 16.`;
+    const pan = detect(text).find((hit) => hit.type === "IN_PAN")!;
+    expect([pan.start, pan.end]).toEqual([13, 23]);
+    expect(text.slice(pan.start, pan.end)).toBe("HKPPS5875Q");
+    expect(pan.masked_value).toBe("*******75Q");
   });
 });

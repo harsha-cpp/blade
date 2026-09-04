@@ -62,7 +62,19 @@ describe("fetchDeviceConfig", () => {
     expect(result.config.org_code).toBe("");
     expect(result.config.domains[0]?.domain).toBe("shapehospital.in");
     expect(result.config.fail_open).toBe(false);
-    expect(result.config.credential_key).toBe(deviceCredentialKey(TOKEN));
+    expect(result.config.credential_key).toBe(await deviceCredentialKey(TOKEN));
+  });
+
+  it("keys the cache on a hash that cannot be turned back into the token", async () => {
+    const key = await deviceCredentialKey(TOKEN);
+
+    expect(key.startsWith("device:")).toBe(true);
+    expect(key).not.toContain(TOKEN);
+    for (let start = 0; start + 6 <= TOKEN.length; start += 1) {
+      expect(key).not.toContain(TOKEN.slice(start, start + 6));
+    }
+    expect(await deviceCredentialKey(TOKEN)).toBe(key);
+    expect(await deviceCredentialKey(`${TOKEN}x`)).not.toBe(key);
   });
 
   it("keeps a stored org code alongside a device-fetched config", async () => {

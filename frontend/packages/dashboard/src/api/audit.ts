@@ -16,11 +16,17 @@ export interface AuditPage {
   next_cursor: string | null;
 }
 
+export type ChainBreakKind = "chain" | "row_hmac";
+
 export interface ChainStatus {
   ok: boolean;
   checked: number;
+  legacy: number;
   broken_at: number | null;
+  failed_check: ChainBreakKind | null;
   detail: string | null;
+  verified_at: string;
+  cached: boolean;
 }
 
 export interface AuditQuery {

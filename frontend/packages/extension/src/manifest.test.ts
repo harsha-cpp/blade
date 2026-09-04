@@ -9,7 +9,7 @@ interface ResolvedManifest {
 }
 
 const manifest = buildManifest(
-  resolveBackendTarget("https://api.bladedlp.io", false),
+  resolveBackendTarget("https://api.tryblade.in", false),
 ) as ResolvedManifest;
 
 describe("extension manifest", () => {
@@ -24,7 +24,7 @@ describe("extension manifest", () => {
   it("does not widen host permissions to get there", () => {
     expect(manifest.host_permissions).toEqual([
       "https://mail.google.com/*",
-      "https://api.bladedlp.io/*",
+      "https://api.tryblade.in/*",
     ]);
   });
 

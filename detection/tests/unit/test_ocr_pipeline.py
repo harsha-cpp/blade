@@ -17,8 +17,11 @@ from blade_detection.extractors.issues import ExtractionIssue
 from blade_detection.extractors.pdf import (
     LOW_TEXT_CHARS,
     OCR_IMAGE_COVERAGE,
+    OCR_IMAGE_MIN_AREA_POINTS,
     extract_pages,
     image_coverage,
+    needs_ocr,
+    visible_placement_areas,
 )
 from blade_detection.models import Attachment, EmailPayload
 from blade_detection.ocr import extract_text, paddle_backend, tesseract_backend
@@ -194,6 +197,139 @@ def test_a_small_logo_does_not_queue_a_text_page_for_ocr() -> None:
 
     assert len(content.pages) == 1
     assert content.pages[0].render_ocr_image is None
+
+
+def _pdf_page_geometry(
+    header: str,
+    image_box: tuple[float, float, float, float],
+    *,
+    rotation: int = 0,
+    origin: tuple[float, float] = (0.0, 0.0),
+    image_size: tuple[int, int] = (900, 1200),
+) -> bytes:
+    fitz = cast(Any, import_module("fitz"))
+    document = fitz.open()
+    page = document.new_page(width=595, height=842)
+    left, top = origin
+    if origin != (0.0, 0.0):
+        page.set_mediabox(fitz.Rect(left, top, left + 595, top + 842))
+    page.insert_text((left + 40, top + 60), header)
+    page.insert_text((left + 40, top + 80), header)
+    page.insert_image(
+        fitz.Rect(
+            left + image_box[0],
+            top + image_box[1],
+            left + image_box[2],
+            top + image_box[3],
+        ),
+        stream=_page_image(*image_size),
+    )
+    if rotation:
+        page.set_rotation(rotation)
+    return cast(bytes, document.tobytes())
+
+
+def _first_page(data: bytes) -> tuple[Any, Any]:
+    fitz = cast(Any, import_module("fitz"))
+    document = fitz.open(stream=data, filetype="pdf")
+    return document, document[0]
+
+
+def test_a_rotated_scan_below_the_unrotated_page_height_is_queued_for_ocr() -> None:
+    document, page = _first_page(
+        _pdf_page_geometry(PRINTED_HEADER, (40, 620, 555, 820), rotation=90, image_size=(1030, 400))
+    )
+    try:
+        text = page.get_text("text").strip()
+        assert len(text) > LOW_TEXT_CHARS
+        assert image_coverage(page) >= OCR_IMAGE_COVERAGE
+        assert needs_ocr(page, text)
+    finally:
+        document.close()
+
+
+def test_a_scan_on_an_offset_mediabox_is_queued_for_ocr() -> None:
+    document, page = _first_page(
+        _pdf_page_geometry(PRINTED_HEADER, (40, 120, 555, 780), origin=(400.0, 500.0))
+    )
+    try:
+        text = page.get_text("text").strip()
+        assert len(text) > LOW_TEXT_CHARS
+        assert image_coverage(page) >= OCR_IMAGE_COVERAGE
+        assert needs_ocr(page, text)
+    finally:
+        document.close()
+
+
+def test_an_id_card_sized_scan_is_queued_for_ocr_despite_low_coverage() -> None:
+    document, page = _first_page(
+        _pdf_page_geometry(PRINTED_HEADER, (40, 120, 220, 255), image_size=(800, 600))
+    )
+    try:
+        text = page.get_text("text").strip()
+        assert len(text) > LOW_TEXT_CHARS
+        placed = max(visible_placement_areas(page))
+        assert placed >= OCR_IMAGE_MIN_AREA_POINTS
+        assert image_coverage(page) < OCR_IMAGE_COVERAGE
+        assert needs_ocr(page, text)
+    finally:
+        document.close()
+
+
+def test_a_small_logo_stays_below_the_absolute_area_trigger() -> None:
+    document, page = _first_page(
+        _pdf_page_geometry(PRINTED_HEADER, (500, 20, 560, 80), image_size=(600, 600))
+    )
+    try:
+        text = page.get_text("text").strip()
+        assert max(visible_placement_areas(page)) < OCR_IMAGE_MIN_AREA_POINTS
+        assert not needs_ocr(page, text)
+    finally:
+        document.close()
+
+
+def test_page_rotation_does_not_change_the_measured_coverage() -> None:
+    measured: list[float] = []
+    for rotation in (0, 90, 180, 270):
+        document, page = _first_page(
+            _pdf_page_geometry(PRINTED_HEADER, (40, 120, 555, 780), rotation=rotation)
+        )
+        try:
+            measured.append(round(image_coverage(page), 6))
+        finally:
+            document.close()
+    assert len(set(measured)) == 1
+
+
+def _scanned_pdf(page_count: int) -> bytes:
+    fitz = cast(Any, import_module("fitz"))
+    document = fitz.open()
+    for _ in range(page_count):
+        page = document.new_page(width=595, height=842)
+        page.insert_image(fitz.Rect(40, 120, 555, 780), stream=_page_image(900, 1200))
+    return cast(bytes, document.tobytes())
+
+
+def test_a_multi_page_ocr_render_opens_the_document_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fitz = cast(Any, import_module("fitz"))
+    content = extract_pages(_scanned_pdf(3))
+    renders = [page.render_ocr_image for page in content.pages if page.render_ocr_image]
+    assert len(renders) == 3
+
+    opens: list[int] = []
+    real_open = fitz.open
+
+    def counting_open(*args: object, **kwargs: object) -> object:
+        opens.append(1)
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(fitz, "open", counting_open)
+    images = [render() for render in renders]
+
+    assert all(image is not None for image in images)
+    assert len(opens) == 1
 
 
 def test_image_coverage_reads_the_placed_area() -> None:

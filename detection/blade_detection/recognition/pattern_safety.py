@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from functools import lru_cache
+from itertools import pairwise
 from typing import Final
 
 import structlog
@@ -13,7 +14,10 @@ MAX_PATTERN_CHARS: Final[int] = 200
 MAX_PROBE_SECONDS: Final[float] = 0.02
 
 PROBE_UNITS: Final[tuple[str, ...]] = ("a", "0", "A0", "-", " ", "\t")
-PROBE_LENGTHS: Final[tuple[int, ...]] = (12, 18, 24)
+PROBE_LENGTHS: Final[tuple[int, ...]] = (12, 18, 24, 64, 128)
+PROBE_REPEATS: Final[int] = 3
+PROBE_NOISE_FLOOR_SECONDS: Final[float] = 0.00001
+MAX_GROWTH_EXPONENT: Final[float] = 1.5
 
 _COUNTED_REPEAT: Final[re.Pattern[str]] = re.compile(r"\{(\d+)(,(\d*))?\}")
 
@@ -168,18 +172,38 @@ def structural_risks(pattern: str) -> list[str]:
     return risks
 
 
-def _slowest_probe_seconds(compiled: re.Pattern[str]) -> float:
-    slowest = 0.0
+def _search_seconds(compiled: re.Pattern[str], text: str) -> float:
+    fastest = float("inf")
+    for _ in range(PROBE_REPEATS):
+        started = time.perf_counter()
+        compiled.search(text)
+        fastest = min(fastest, time.perf_counter() - started)
+    return fastest
+
+
+def _probe_seconds_by_length(compiled: re.Pattern[str]) -> dict[int, float]:
+    timings: dict[int, float] = {}
     for length in PROBE_LENGTHS:
+        slowest = 0.0
         for unit in PROBE_UNITS:
             text = (unit * length)[:length] + "!"
-            started = time.perf_counter()
-            compiled.search(text)
-            elapsed = time.perf_counter() - started
-            slowest = max(slowest, elapsed)
-            if slowest > MAX_PROBE_SECONDS:
-                return slowest
-    return slowest
+            slowest = max(slowest, _search_seconds(compiled, text))
+        timings[length] = slowest
+        if slowest > MAX_PROBE_SECONDS:
+            return timings
+    return timings
+
+
+def _grows_superlinearly(timings: dict[int, float]) -> tuple[int, int] | None:
+    lengths = sorted(timings)
+    for shorter, longer in pairwise(lengths):
+        baseline = timings[shorter]
+        if baseline < PROBE_NOISE_FLOOR_SECONDS:
+            continue
+        allowed = baseline * (longer / shorter) ** MAX_GROWTH_EXPONENT
+        if timings[longer] > allowed:
+            return shorter, longer
+    return None
 
 
 @lru_cache(maxsize=256)
@@ -194,13 +218,23 @@ def is_safe_pattern(pattern: str) -> bool:
         return False
 
     try:
-        compiled = re.compile(pattern)
+        compiled = re.compile(pattern, re.IGNORECASE)
     except re.error:
         logger.warning("tenant pattern rejected as invalid")
         return False
 
-    elapsed = _slowest_probe_seconds(compiled)
-    if elapsed > MAX_PROBE_SECONDS:
-        logger.warning("tenant pattern rejected on a timing probe", seconds=round(elapsed, 4))
+    timings = _probe_seconds_by_length(compiled)
+    slowest = max(timings.values())
+    if slowest > MAX_PROBE_SECONDS:
+        logger.warning("tenant pattern rejected on a timing probe", seconds=round(slowest, 4))
+        return False
+
+    growth = _grows_superlinearly(timings)
+    if growth is not None:
+        logger.warning(
+            "tenant pattern rejected on superlinear probe growth",
+            shorter=growth[0],
+            longer=growth[1],
+        )
         return False
     return True

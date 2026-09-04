@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from blade_backend.audit import api as audit_api
+from blade_backend.audit.service import ChainVerification
 from blade_backend.auth.passwords import hash_password
 from blade_backend.db.models import MemberRole, OrgMember
 from tests.integration.conftest import requires_database
@@ -141,3 +145,55 @@ async def test_the_audit_search_treats_wildcards_as_literal_text(api_client: Asy
     assert await _search("%") == []
     assert await _search("domain%added") == []
     assert await _search("member_owner") == []
+
+
+async def test_the_actor_filter_treats_wildcards_as_literal_text(api_client: AsyncClient) -> None:
+    token, _org_id, _slug = await _signup(api_client)
+    await api_client.post(
+        "/api/v1/domains",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"domain": "verifiedhospital.in", "direction": "both", "classification": "internal"},
+    )
+
+    async def _by_actor(needle: str) -> list[dict[str, object]]:
+        response = await api_client.get(
+            "/api/v1/audit",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"actor": needle},
+        )
+        assert response.status_code == 200, response.text
+        events: list[dict[str, object]] = response.json()["events"]
+        return events
+
+    assert await _by_actor("member:")
+    assert await _by_actor("%") == []
+    assert await _by_actor("member%") == []
+    assert await _by_actor("member_") == []
+
+
+async def test_two_simultaneous_verifications_walk_the_chain_once(
+    api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token, _org_id, _slug = await _signup(api_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    walked = 0
+    real_verify_chain = audit_api.verify_chain
+
+    async def _counted(session: AsyncSession, org_id: UUID) -> ChainVerification:
+        nonlocal walked
+        walked += 1
+        await asyncio.sleep(0.2)
+        return await real_verify_chain(session, org_id)
+
+    monkeypatch.setattr(audit_api, "verify_chain", _counted)
+
+    first, second = await asyncio.gather(
+        api_client.get("/api/v1/audit/chain", headers=headers),
+        api_client.get("/api/v1/audit/chain", headers=headers),
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert walked == 1
+    assert first.json()["verified_at"] == second.json()["verified_at"]
+    assert {first.json()["cached"], second.json()["cached"]} == {False, True}

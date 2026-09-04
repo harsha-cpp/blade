@@ -93,6 +93,56 @@ describe("checking an insertion in context", () => {
   });
 });
 
+describe("clinical context beyond the inspection window", () => {
+  it("blocks a typed phone number 1,500 chars after the word patient", () => {
+    const field = document.createElement("textarea");
+    const lead = `Patient notes: ${"x".repeat(1_500)}`;
+    field.value = `${lead}call `;
+    document.body.append(field);
+    field.setSelectionRange(field.value.length, field.value.length);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+    const event = beforeInput("9876543210");
+
+    field.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(notify).toHaveBeenCalledOnce();
+    dispose();
+  });
+
+  it("leaves a phone number in an ordinary field alone", () => {
+    const field = document.createElement("textarea");
+    field.value = `Order update: ${"x".repeat(1_500)}call `;
+    document.body.append(field);
+    field.setSelectionRange(field.value.length, field.value.length);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+    const event = beforeInput("9876543210");
+
+    field.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it("still inspects only the window around the caret", () => {
+    const field = document.createElement("textarea");
+    field.value = `Patient notes: ${"x".repeat(50_000)}call `;
+    document.body.append(field);
+    field.setSelectionRange(field.value.length, field.value.length);
+    const dispose = installInputProtection({ document, notify: vi.fn() });
+
+    field.dispatchEvent(beforeInput("9876543210"));
+
+    for (const length of inspectedLengths()) {
+      expect(length).toBeLessThanOrEqual(INSERTION_WINDOW_CHARS + 10);
+    }
+    dispose();
+  });
+});
+
 describe("per keystroke cost", () => {
   it("inspects no more than a window around the caret of a 100 kB field", () => {
     const field = hugeField(50_000);

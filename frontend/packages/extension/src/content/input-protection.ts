@@ -76,11 +76,18 @@ export interface InputProtectionOptions {
   onBlocked?: (decision: InputProtectionDecision) => void;
 }
 
-function allowedHits(text: string, hits: PhiHit[]): PhiHit[] {
+function allowedHits(
+  text: string,
+  hits: PhiHit[],
+  fieldText?: string,
+): PhiHit[] {
   const hasStandalone = hits.some((hit) =>
     STANDALONE_ENTITY_TYPES.has(hit.type),
   );
-  const clinical = hasStandalone || PATIENT_CONTEXT.test(text);
+  const clinical =
+    hasStandalone ||
+    PATIENT_CONTEXT.test(text) ||
+    (fieldText !== undefined && PATIENT_CONTEXT.test(fieldText));
   return hits.filter(
     (hit) => !CONTEXTUAL_ENTITY_TYPES.has(hit.type) || clinical,
   );
@@ -96,7 +103,10 @@ function decide(hits: PhiHit[]): InputProtectionDecision {
   };
 }
 
-export function inspectProtectedText(text: string): InputProtectionDecision {
+export function inspectProtectedText(
+  text: string,
+  fieldText?: string,
+): InputProtectionDecision {
   if (!text) return { blocked: false, reason: null, hits: [], labels: [] };
   if (text.length > MAX_INSPECTION_CHARS) {
     return {
@@ -106,7 +116,7 @@ export function inspectProtectedText(text: string): InputProtectionDecision {
       labels: ["Content too large to inspect safely"],
     };
   }
-  return decide(allowedHits(text, detectPhi(text, "body")));
+  return decide(allowedHits(text, detectPhi(text, "body"), fieldText));
 }
 
 export function isProtectedEditable(element: HTMLElement): boolean {
@@ -227,6 +237,31 @@ export function composedRange(
   const fallback = Math.max(0, text.length - committed.length);
   const start = Math.max(0, Math.min(anchor?.start ?? fallback, text.length));
   return { start, end: Math.min(text.length, start + committed.length) };
+}
+
+export function composedRangeToCaret(
+  text: string,
+  anchor: TextRange | null,
+  caret: TextRange,
+): TextRange {
+  const start = Math.max(
+    0,
+    Math.min(anchor?.start ?? caret.start, text.length),
+  );
+  const end = Math.max(start, Math.min(caret.end, text.length));
+  return { start, end };
+}
+
+export function insertedRange(
+  text: string,
+  caret: TextRange,
+  inserted: string,
+): TextRange | null {
+  if (!inserted) return null;
+  const start = caret.start - inserted.length;
+  if (start < 0 || caret.start > text.length) return null;
+  if (text.slice(start, caret.start) !== inserted) return null;
+  return { start, end: caret.start };
 }
 
 export function spliceWindow(
@@ -498,6 +533,7 @@ export function installInputProtection(
     if (!editable) return;
     const decision = inspectProtectedText(
       insertionWindow(editable, event.data),
+      editableText(editable),
     );
     if (decision.blocked) {
       stopUnsafeInput(event, decision, notify);
@@ -528,15 +564,32 @@ export function installInputProtection(
     inspectedEdit = null;
 
     const committed = (event as CompositionEvent).data ?? "";
-    if (!committed) return;
-
     const text = editableText(editable);
-    const composed = composedRange(text, anchor, committed);
-    const decision = inspectProtectedText(textWindow(text, composed));
+    const composed = committed
+      ? composedRange(text, anchor, committed)
+      : composedRangeToCaret(text, anchor, selectionRange(editable));
+    const decision = inspectProtectedText(textWindow(text, composed), text);
     if (!decision.blocked) return;
 
     removeTextRange(editable, composed);
     notify(decision, event.isTrusted === true);
+  };
+
+  const removeOffendingInsertion = (
+    editable: HTMLElement,
+    event: Event,
+  ): void => {
+    const inserted = "data" in event ? ((event as InputEvent).data ?? "") : "";
+    const range = insertedRange(
+      editableText(editable),
+      selectionRange(editable),
+      inserted,
+    );
+    if (range) {
+      removeTextRange(editable, range);
+      if (!inspectProtectedText(editableText(editable)).blocked) return;
+    }
+    clearEditable(editable);
   };
 
   const onInput = (event: Event): void => {
@@ -546,7 +599,7 @@ export function installInputProtection(
     if (claimInspectedEdit(editable)) return;
     const decision = inspectProtectedText(editableText(editable));
     if (!decision.blocked) return;
-    clearEditable(editable);
+    removeOffendingInsertion(editable, event);
     notify(decision, event.isTrusted === true);
   };
 

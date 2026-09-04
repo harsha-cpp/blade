@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   composedRange,
+  composedRangeToCaret,
   installInputProtection,
   textWindow,
 } from "./input-protection";
@@ -57,6 +58,62 @@ describe("locating a committed composition", () => {
 
     expect(window).toContain("Patient Aadhaar");
     expect(window).toContain(AADHAAR);
+  });
+});
+
+describe("a composition that ends without naming what it committed", () => {
+  it("spans the anchor to the caret", () => {
+    expect(
+      composedRangeToCaret(
+        "abcdefgh",
+        { start: 2, end: 2 },
+        { start: 5, end: 5 },
+      ),
+    ).toEqual({ start: 2, end: 5 });
+  });
+
+  it("never runs backwards or past the end of the field", () => {
+    expect(
+      composedRangeToCaret("abc", { start: 2, end: 2 }, { start: 1, end: 1 }),
+    ).toEqual({ start: 2, end: 2 });
+    expect(composedRangeToCaret("abc", null, { start: 99, end: 99 })).toEqual({
+      start: 3,
+      end: 3,
+    });
+  });
+
+  it("still inspects and removes what the composition committed", () => {
+    const field = document.createElement("textarea");
+    field.value = `${KEPT}Patient Aadhaar `;
+    document.body.append(field);
+    caretAt(field, field.value.length);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+
+    field.dispatchEvent(compositionEvent("compositionstart", ""));
+    field.value = `${KEPT}Patient Aadhaar ${AADHAAR}`;
+    caretAt(field, field.value.length);
+    field.dispatchEvent(compositionEvent("compositionend", ""));
+
+    expect(field.value).toBe(`${KEPT}Patient Aadhaar `);
+    expect(notify).toHaveBeenCalledOnce();
+    dispose();
+  });
+
+  it("leaves a safe composition alone when it commits nothing", () => {
+    const field = document.createElement("textarea");
+    field.value = "Meeting notes: agenda";
+    document.body.append(field);
+    caretAt(field, field.value.length);
+    const notify = vi.fn();
+    const dispose = installInputProtection({ document, notify });
+
+    field.dispatchEvent(compositionEvent("compositionstart", ""));
+    field.dispatchEvent(compositionEvent("compositionend", ""));
+
+    expect(field.value).toBe("Meeting notes: agenda");
+    expect(notify).not.toHaveBeenCalled();
+    dispose();
   });
 });
 

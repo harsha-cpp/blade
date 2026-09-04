@@ -46,6 +46,7 @@ class Entity(BaseModel):
 
 class ScanResult(BaseModel):
     entities: list[Entity]
+    entity_count: int = 0
     severity: Severity
     risk_score: float
     duration_ms: int

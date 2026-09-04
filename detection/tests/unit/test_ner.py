@@ -72,13 +72,43 @@ def test_a_name_split_by_a_chunk_boundary_keeps_offsets_correct(
     assert all(span.text != "Ramesh" for span in spans)
 
 
-def test_chunk_offsets_cover_the_whole_text_without_overlap() -> None:
+def test_chunk_offsets_cover_the_whole_text_with_a_bounded_overlap() -> None:
     text = FILLER_LINE * 40
-    chunks = list(ner.chunk_offsets(text, 200))
+    chunk_chars = 200
+    chunks = list(ner.chunk_offsets(text, chunk_chars))
+    overlap = min(ner.NER_CHUNK_OVERLAP_CHARS, chunk_chars // 2)
 
-    assert "".join(chunk for _, chunk in chunks) == text
-    rebuilt = 0
+    assert chunks[0][0] == 0
+    assert chunks[-1][0] + len(chunks[-1][1]) == len(text)
+    covered = 0
     for offset, chunk in chunks:
-        assert offset == rebuilt
-        rebuilt += len(chunk)
-    assert rebuilt == len(text)
+        assert text[offset : offset + len(chunk)] == chunk
+        assert offset <= covered
+        assert covered - offset <= overlap
+        covered = max(covered, offset + len(chunk))
+    assert covered == len(text)
+
+
+def test_a_multi_token_name_on_a_chunk_boundary_is_still_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = "Ward round notes for the morning shift are unremarkable today. "
+    text = prefix + "Sunita Bhatt is on call for the evening shift."
+    monkeypatch.setattr(ner, "NER_CHUNK_CHARS", len(prefix) + len("Sunita "))
+    monkeypatch.setattr(ner, "NER_CHUNK_BOUNDARY_SEARCH", 0)
+
+    spans = ner.person_spans(text, MODEL)
+
+    assert _offsets_are_absolute(text, spans)
+    assert any(span.text == "Sunita Bhatt" for span in spans)
+
+
+def test_overlapping_chunks_do_not_report_the_same_name_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ner, "NER_CHUNK_CHARS", 200)
+    text = FILLER_LINE * 6 + NAME_LINE + FILLER_LINE * 6
+
+    spans = ner.person_spans(text, MODEL)
+
+    assert len({(span.start, span.end) for span in spans}) == len(spans)

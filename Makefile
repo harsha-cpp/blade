@@ -13,6 +13,8 @@ IMAGE_PREFIX ?= blade
 IMAGE_TAG ?= dev
 # Baked into the dashboard bundle AND its CSP at build time; not overridable at run time.
 VITE_API_BASE_URL ?= http://localhost:8000
+# The marketing site origin baked into the dashboard's request-access link.
+VITE_LANDING_URL ?= http://localhost:3000
 TEST_DB_ASYNC ?= postgresql+asyncpg://blade:blade@localhost:5433/blade_test
 TEST_DB_SYNC ?= postgresql+psycopg://blade:blade@localhost:5433/blade_test
 
@@ -40,7 +42,7 @@ worker-dev: ## Run the Celery worker (queued attachment scans)
 	cd backend && $(UV) run celery -A blade_backend.tasks.celery_app worker \
 		--loglevel=info --concurrency=2
 
-beat-dev: ## Run Celery beat (schedules the daily expired-credential purge)
+beat-dev: ## Run Celery beat (schedules the daily purge of stale tokens and access requests)
 	cd backend && $(UV) run celery -A blade_backend.tasks.celery_app beat --loglevel=info
 
 dashboard-dev: ## Run admin dashboard
@@ -116,9 +118,10 @@ images-api: ## Build the FastAPI image
 images-worker: ## Build the Celery worker image
 	docker build -f infra/docker/worker.Dockerfile -t $(IMAGE_PREFIX)/worker:$(IMAGE_TAG) .
 
-images-dashboard: ## Build the dashboard image (VITE_API_BASE_URL is baked in)
+images-dashboard: ## Build the dashboard image (VITE_API_BASE_URL and VITE_LANDING_URL are baked in)
 	docker build -f infra/docker/dashboard.Dockerfile \
 		--build-arg VITE_API_BASE_URL=$(VITE_API_BASE_URL) \
+		--build-arg VITE_LANDING_URL=$(VITE_LANDING_URL) \
 		-t $(IMAGE_PREFIX)/dashboard:$(IMAGE_TAG) .
 
 prod-config: ## Render + validate the production compose file

@@ -11,6 +11,9 @@ from blade_backend.observability.redis_gate import (
     REDIS_MAX_RETRY_SECONDS,
     RedisGate,
 )
+from blade_backend.settings import get_settings
+
+UNREACHABLE_REDIS_URL = "redis://127.0.0.1:1/0"
 
 
 def _request(client: str = "203.0.113.10") -> Request:
@@ -104,14 +107,25 @@ async def test_memory_fallback_is_bounded() -> None:
 
 
 @pytest.mark.unit
-async def test_redis_is_retried_rather_than_disabled_for_the_process_lifetime() -> None:
+async def test_redis_is_retried_rather_than_disabled_for_the_process_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDIS_URL", UNREACHABLE_REDIS_URL)
+    get_settings.cache_clear()
     gate = RedisGate()
     gate.drop()
+    backoff_after_first_failure = gate._backoff_seconds
+
     assert await gate.client() is None
+    assert gate._backoff_seconds == backoff_after_first_failure
 
     gate._retry_at = 0.0
 
-    assert gate._backoff_seconds > REDIS_FIRST_RETRY_SECONDS
+    assert await gate.client() is None
+    assert gate._backoff_seconds > backoff_after_first_failure
+    assert backoff_after_first_failure > REDIS_FIRST_RETRY_SECONDS
+
+    get_settings.cache_clear()
 
 
 @pytest.mark.unit

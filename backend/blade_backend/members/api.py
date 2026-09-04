@@ -316,7 +316,11 @@ async def revoke_member_devices(
 ) -> int:
     result = await session.execute(
         update(DeviceToken)
-        .where(DeviceToken.member_id == target.id, DeviceToken.revoked_at.is_(None))
+        .where(
+            DeviceToken.member_id == target.id,
+            DeviceToken.org_id == target.org_id,
+            DeviceToken.revoked_at.is_(None),
+        )
         .values(revoked_at=datetime.now(UTC))
         .returning(DeviceToken.id)
     )

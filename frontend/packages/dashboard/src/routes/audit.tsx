@@ -4,10 +4,12 @@ import { Download, Search } from "lucide-react";
 import { auditApi, type AuditEvent } from "../api/audit";
 import {
   actionLabel,
+  actorFilterOptions,
   auditCsv,
   categoryLabel,
+  chainBanner,
   CHAIN_COPY,
-  distinctActors,
+  nextActorOptions,
   verifyChain,
   type ChainState,
 } from "../lib/audit";
@@ -23,6 +25,7 @@ export default function AuditRoute() {
   const [category, setCategory] = useState("");
   const [actor, setActor] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [knownActors, setKnownActors] = useState<string[]>([]);
 
   const [pages, setPages] = useState<string[]>([]);
   const cursor = pages[pages.length - 1];
@@ -68,7 +71,14 @@ export default function AuditRoute() {
     () => verifyChain(rows, contiguous),
     [rows, contiguous],
   );
-  const actors = useMemo(() => distinctActors(rows), [rows]);
+  useEffect(() => {
+    setKnownActors((known) => nextActorOptions(known, rows, !contiguous));
+  }, [rows, contiguous]);
+
+  const actors = useMemo(
+    () => actorFilterOptions(knownActors, actor),
+    [knownActors, actor],
+  );
   const broken = chain.filter((s) => s === "broken").length;
   const linked = chain.filter((s) => s === "linked").length;
 
@@ -76,7 +86,8 @@ export default function AuditRoute() {
     setPages([]);
   }
 
-  const chainFailed = (chainStatus && !chainStatus.ok) || broken > 0;
+  const banner = chainStatus ? chainBanner(chainStatus) : null;
+  const chainFailed = (banner !== null && !banner.ok) || broken > 0;
 
   return (
     <div>
@@ -105,6 +116,7 @@ export default function AuditRoute() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search actor, action, hash"
             aria-label="Search audit log"
+            maxLength={120}
           />
         </label>
         <select
@@ -158,25 +170,13 @@ export default function AuditRoute() {
             <strong>
               Server-side verification is run by owners and admins.
             </strong>{" "}
-            This page still checks that each visible row links to the one before
-            it.
+            {contiguous
+              ? "This page still checks that each visible row links to the one before it."
+              : "Continuity is not checked here either, because a filtered page skips rows on purpose."}
           </>
-        ) : chainStatus && !chainStatus.ok ? (
+        ) : banner ? (
           <>
-            <strong>
-              Chain verification failed at entry {chainStatus.broken_at}.
-            </strong>{" "}
-            {chainStatus.detail ?? "A row no longer matches its recorded hash."}{" "}
-            Checked {chainStatus.checked} entries server-side. Treat this log as
-            suspect and escalate.
-          </>
-        ) : chainStatus?.ok ? (
-          <>
-            <strong>
-              All {chainStatus.checked} entries verified server-side.
-            </strong>{" "}
-            Every row's hash covers the one before it across the whole log, not
-            just this page.
+            <strong>{banner.headline}</strong> {banner.notes.join(" ")}
           </>
         ) : !contiguous ? (
           <>

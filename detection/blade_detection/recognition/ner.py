@@ -16,6 +16,7 @@ NER_CONFIDENCE = 0.55
 NER_PRIORITY = 20
 NER_CHUNK_CHARS = 100_000
 NER_CHUNK_BOUNDARY_SEARCH = 4_000
+NER_CHUNK_OVERLAP_CHARS = 512
 TITLE_LOOKBEHIND_CHARS = 16
 UNUSED_PIPELINE_COMPONENTS = ("tagger", "parser", "attribute_ruler", "lemmatizer", "senter")
 
@@ -177,14 +178,19 @@ def looks_like_name(text: str) -> bool:
 
 
 def chunk_offsets(text: str, chunk_chars: int) -> Iterator[tuple[int, str]]:
-    start = 0
     length = len(text)
-    while start < length:
+    if length == 0:
+        return
+    overlap = min(NER_CHUNK_OVERLAP_CHARS, max(0, chunk_chars // 2))
+    start = 0
+    while True:
         end = min(start + chunk_chars, length)
         if end < length:
             end = _split_point(text, start, end)
         yield start, text[start:end]
-        start = end
+        if end >= length:
+            return
+        start = max(start + 1, end - overlap)
 
 
 def _split_point(text: str, start: int, end: int) -> int:
@@ -208,9 +214,13 @@ def person_spans(text: str, model_name: str) -> list[NerSpan]:
     nlp = load_model(model_name)
     chunk_chars = min(NER_CHUNK_CHARS, nlp.max_length)
     spans: list[NerSpan] = []
+    covered_to = 0
     for offset, chunk in chunk_offsets(text, chunk_chars):
         for entity in nlp(chunk).ents:
             start = offset + entity.start_char
+            end = offset + entity.end_char
+            if end <= covered_to:
+                continue
             titled = _preceded_by_title(text, start)
             if entity.label_ != "PERSON" and not (entity.label_ == "ORG" and titled):
                 continue
@@ -218,5 +228,6 @@ def person_spans(text: str, model_name: str) -> list[NerSpan]:
                 continue
             if len(entity.text.split()) < 2 and not titled:
                 continue
-            spans.append(NerSpan(entity.text, "PERSON", start, offset + entity.end_char))
+            spans.append(NerSpan(entity.text, "PERSON", start, end))
+        covered_to = max(covered_to, offset + len(chunk))
     return spans

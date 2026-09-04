@@ -5,6 +5,7 @@ import { ROLES, ROLE_DESCRIPTIONS, type Role } from "../lib/roles";
 import { useAuth } from "../lib/auth";
 import { errorMessage } from "../lib/errors";
 import { formatDate } from "../lib/format";
+import { useDialogFocus } from "../lib/use-dialog-focus";
 import PageHeader from "../components/PageHeader";
 
 export default function MembersRoute() {
@@ -43,6 +44,9 @@ export default function MembersRoute() {
   } | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<OrgMember | null>(null);
+  const removeDialogRef = useDialogFocus<HTMLDivElement>(
+    confirmRemove !== null,
+  );
 
   useEffect(() => {
     if (!confirmRemove) return;
@@ -244,6 +248,7 @@ export default function MembersRoute() {
       {confirmRemove ? (
         <div className="dialog-scrim" role="presentation">
           <div
+            ref={removeDialogRef}
             className="dialog"
             role="dialog"
             aria-modal="true"

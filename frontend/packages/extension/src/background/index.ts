@@ -10,7 +10,7 @@ import {
   isCredentialStorageChange,
   resolveScanCredential,
 } from "./credentials";
-import { injectIntoOpenTabs } from "./inject";
+import { injectionSummaryLine, injectIntoOpenTabs } from "./inject";
 import { createWebBlockGate } from "./web-block-gate";
 import {
   deviceCredentialKey,
@@ -68,7 +68,7 @@ async function refresh(): Promise<void> {
 
   const expectedKey =
     credential.kind === "device"
-      ? deviceCredentialKey(credential.token)
+      ? await deviceCredentialKey(credential.token)
       : orgCodeCredentialKey(credential.orgCode);
   const stored = await chrome.storage.local.get("blade_config");
   const cached = stored.blade_config as ConfigCache | undefined;
@@ -104,9 +104,13 @@ chrome.runtime.onInstalled.addListener(() => {
     delayInMinutes: 0.1,
   });
   void refresh();
-  void injectIntoOpenTabs().catch((err: unknown) => {
-    console.warn("[Blade] could not reach every open tab after install", err);
-  });
+  void injectIntoOpenTabs()
+    .then((summary) => {
+      console.info(injectionSummaryLine(summary));
+    })
+    .catch((err: unknown) => {
+      console.warn("[Blade] could not reach every open tab after install", err);
+    });
 });
 
 chrome.runtime.onStartup.addListener(() => {

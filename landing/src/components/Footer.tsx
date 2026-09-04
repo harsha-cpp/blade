@@ -6,9 +6,9 @@ import Lottie from "./ui/Lottie";
 import BladeMark from "./ui/BladeMark";
 
 const primary: [string, string, string][] = [
-  ["How it works", "#howitworks", "01"],
-  ["Why Blade", "#features", "02"],
-  ["Use cases", "#usecase", "03"],
+  ["How it works", "/#howitworks", "01"],
+  ["Why Blade", "/#features", "02"],
+  ["Use cases", "/#usecase", "03"],
   ["Get started", appLinks.getStarted, "04"],
 ];
 

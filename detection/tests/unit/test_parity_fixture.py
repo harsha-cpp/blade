@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import pytest
 
@@ -26,6 +27,9 @@ def test_fixture_covers_the_corpus_and_the_unicode_folding_cases() -> None:
     assert "unicode.aadhaar-devanagari-digits" in identifiers
     assert "unicode.pan-zero-width-joiner" in identifiers
     assert payload["serverOnlyRules"] == ["spacy-ner", "mrn-tenant-*"]
+    divergences = cast(list[str], payload["browserValidatorDivergences"])
+    assert isinstance(divergences, list)
+    assert any("icd10" in entry for entry in divergences)
 
 
 def test_fixture_records_spans_that_index_the_original_text() -> None:

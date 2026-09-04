@@ -4,6 +4,9 @@
     "spacy-ner",
     "mrn-tenant-*"
   ],
+  "browserValidatorDivergences": [
+    "icd10: the browser accepts any subcode under a known category because the full ICD-10-CM item list is about 1 MB of JSON"
+  ],
   "cases": [
     {
       "id": "admin-preauth-001.subject",
@@ -13,7 +16,11 @@
           "type": "INSURANCE_POLICY",
           "start": 26,
           "end": 49,
-          "maskedValue": "*******************4567"
+          "utf16Start": 26,
+          "utf16End": 49,
+          "maskedValue": "*******************4567",
+          "valueHash": "51a0e1bb",
+          "confidence": 0.85
         }
       ]
     },
@@ -25,25 +32,41 @@
           "type": "PERSON",
           "start": 52,
           "end": 64,
-          "maskedValue": "************"
+          "utf16Start": 52,
+          "utf16End": 64,
+          "maskedValue": "************",
+          "valueHash": "da44f850",
+          "confidence": 0.8
         },
         {
           "type": "MRN",
           "start": 71,
           "end": 78,
-          "maskedValue": "*****18"
+          "utf16Start": 71,
+          "utf16End": 78,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
         },
         {
           "type": "INSURANCE_POLICY",
           "start": 95,
           "end": 118,
-          "maskedValue": "*******************4567"
+          "utf16Start": 95,
+          "utf16End": 118,
+          "maskedValue": "*******************4567",
+          "valueHash": "51a0e1bb",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 206,
           "end": 209,
-          "maskedValue": "***"
+          "utf16Start": 206,
+          "utf16End": 209,
+          "maskedValue": "***",
+          "valueHash": "3f2e2b6d",
+          "confidence": 0.85
         }
       ]
     },
@@ -60,25 +83,41 @@
           "type": "INSURANCE_POLICY",
           "start": 30,
           "end": 45,
-          "maskedValue": "***********8120"
+          "utf16Start": 30,
+          "utf16End": 45,
+          "maskedValue": "***********8120",
+          "valueHash": "b08a2c6c",
+          "confidence": 0.8
         },
         {
           "type": "PERSON",
           "start": 58,
           "end": 75,
-          "maskedValue": "*****************"
+          "utf16Start": 58,
+          "utf16End": 75,
+          "maskedValue": "*****************",
+          "valueHash": "928086b2",
+          "confidence": 0.78
         },
         {
           "type": "IN_PAN",
           "start": 144,
           "end": 154,
-          "maskedValue": "*******75Q"
+          "utf16Start": 144,
+          "utf16End": 154,
+          "maskedValue": "*******75Q",
+          "valueHash": "cec8c32b",
+          "confidence": 1.0
         },
         {
           "type": "INSURANCE_POLICY",
           "start": 164,
           "end": 180,
-          "maskedValue": "************1823"
+          "utf16Start": 164,
+          "utf16End": 180,
+          "maskedValue": "************1823",
+          "valueHash": "53ff9b22",
+          "confidence": 0.85
         }
       ]
     },
@@ -95,31 +134,51 @@
           "type": "MRN",
           "start": 36,
           "end": 43,
-          "maskedValue": "*****02"
+          "utf16Start": 36,
+          "utf16End": 43,
+          "maskedValue": "*****02",
+          "valueHash": "48f5ff3e",
+          "confidence": 0.85
         },
         {
           "type": "IN_AADHAAR",
           "start": 53,
           "end": 67,
-          "maskedValue": "**********7545"
+          "utf16Start": 53,
+          "utf16End": 67,
+          "maskedValue": "**********7545",
+          "valueHash": "fc2186f5",
+          "confidence": 1.0
         },
         {
           "type": "IN_PHONE",
           "start": 111,
           "end": 121,
-          "maskedValue": "*******788"
+          "utf16Start": 111,
+          "utf16End": 121,
+          "maskedValue": "*******788",
+          "valueHash": "3914d09e",
+          "confidence": 0.8500000000000001
         },
         {
           "type": "EMAIL_ADDRESS",
           "start": 129,
           "end": 153,
-          "maskedValue": "**************@gmail.com"
+          "utf16Start": 129,
+          "utf16End": 153,
+          "maskedValue": "**************@gmail.com",
+          "valueHash": "ca9cf5fb",
+          "confidence": 0.7
         },
         {
           "type": "ABHA_NUMBER",
           "start": 160,
           "end": 177,
-          "maskedValue": "*************6094"
+          "utf16Start": 160,
+          "utf16End": 177,
+          "maskedValue": "*************6094",
+          "valueHash": "6b13b4f9",
+          "confidence": 1.0
         }
       ]
     },
@@ -136,7 +195,11 @@
           "type": "IN_AADHAAR",
           "start": 73,
           "end": 85,
-          "maskedValue": "********1839"
+          "utf16Start": 73,
+          "utf16End": 85,
+          "maskedValue": "********1839",
+          "valueHash": "5ebf581d",
+          "confidence": 1.0
         }
       ]
     },
@@ -153,25 +216,41 @@
           "type": "MRN",
           "start": 39,
           "end": 46,
-          "maskedValue": "*****41"
+          "utf16Start": 39,
+          "utf16End": 46,
+          "maskedValue": "*****41",
+          "valueHash": "c8744f64",
+          "confidence": 0.85
         },
         {
           "type": "PERSON",
           "start": 64,
           "end": 91,
-          "maskedValue": "***************************"
+          "utf16Start": 64,
+          "utf16End": 91,
+          "maskedValue": "***************************",
+          "valueHash": "1e919c25",
+          "confidence": 0.78
         },
         {
           "type": "BANK_ACCOUNT",
           "start": 100,
           "end": 114,
-          "maskedValue": "**********7891"
+          "utf16Start": 100,
+          "utf16End": 114,
+          "maskedValue": "**********7891",
+          "valueHash": "1f766b1e",
+          "confidence": 0.8
         },
         {
           "type": "IN_IFSC",
           "start": 121,
           "end": 132,
-          "maskedValue": "********3FI"
+          "utf16Start": 121,
+          "utf16End": 132,
+          "maskedValue": "********3FI",
+          "valueHash": "e55cd6b5",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -188,13 +267,21 @@
           "type": "IN_UPI",
           "start": 96,
           "end": 121,
-          "maskedValue": "*********************bank"
+          "utf16Start": 96,
+          "utf16End": 121,
+          "maskedValue": "*********************bank",
+          "valueHash": "647a558f",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 152,
           "end": 159,
-          "maskedValue": "*****88"
+          "utf16Start": 152,
+          "utf16End": 159,
+          "maskedValue": "*****88",
+          "valueHash": "135df071",
+          "confidence": 0.85
         }
       ]
     },
@@ -211,7 +298,11 @@
           "type": "IN_GSTIN",
           "start": 64,
           "end": 79,
-          "maskedValue": "***********I1ZI"
+          "utf16Start": 64,
+          "utf16End": 79,
+          "maskedValue": "***********I1ZI",
+          "valueHash": "b6bcdca7",
+          "confidence": 0.9
         }
       ]
     },
@@ -228,13 +319,21 @@
           "type": "IN_PASSPORT",
           "start": 89,
           "end": 97,
-          "maskedValue": "******67"
+          "utf16Start": 89,
+          "utf16End": 97,
+          "maskedValue": "******67",
+          "valueHash": "f66815db",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 131,
           "end": 138,
-          "maskedValue": "*****55"
+          "utf16Start": 131,
+          "utf16End": 138,
+          "maskedValue": "*****55",
+          "valueHash": "e6567f91",
+          "confidence": 0.85
         }
       ]
     },
@@ -251,13 +350,21 @@
           "type": "PATIENT_VISIT_ID",
           "start": 57,
           "end": 67,
-          "maskedValue": "*******588"
+          "utf16Start": 57,
+          "utf16End": 67,
+          "maskedValue": "*******588",
+          "valueHash": "66c09d46",
+          "confidence": 0.8
         },
         {
           "type": "IN_DRIVING_LICENSE",
           "start": 108,
           "end": 123,
-          "maskedValue": "***********2345"
+          "utf16Start": 108,
+          "utf16End": 123,
+          "maskedValue": "***********2345",
+          "valueHash": "de21f8ca",
+          "confidence": 0.8
         }
       ]
     },
@@ -274,19 +381,31 @@
           "type": "PERSON",
           "start": 12,
           "end": 32,
-          "maskedValue": "********************"
+          "utf16Start": 12,
+          "utf16End": 32,
+          "maskedValue": "********************",
+          "valueHash": "2186638e",
+          "confidence": 0.78
         },
         {
           "type": "ABHA_NUMBER",
           "start": 39,
           "end": 56,
-          "maskedValue": "*************1488"
+          "utf16Start": 39,
+          "utf16End": 56,
+          "maskedValue": "*************1488",
+          "valueHash": "809f36fe",
+          "confidence": 1.0
         },
         {
           "type": "IN_AADHAAR",
           "start": 66,
           "end": 80,
-          "maskedValue": "**********0811"
+          "utf16Start": 66,
+          "utf16End": 80,
+          "maskedValue": "**********0811",
+          "valueHash": "1349aa50",
+          "confidence": 1.0
         }
       ]
     },
@@ -303,13 +422,21 @@
           "type": "IN_VOTER_ID",
           "start": 93,
           "end": 103,
-          "maskedValue": "*******567"
+          "utf16Start": 93,
+          "utf16End": 103,
+          "maskedValue": "*******567",
+          "valueHash": "77dc73f1",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 198,
           "end": 205,
-          "maskedValue": "*****30"
+          "utf16Start": 198,
+          "utf16End": 205,
+          "maskedValue": "*****30",
+          "valueHash": "0388c406",
+          "confidence": 0.85
         }
       ]
     },
@@ -321,7 +448,11 @@
           "type": "PERSON",
           "start": 24,
           "end": 29,
-          "maskedValue": "*****"
+          "utf16Start": 24,
+          "utf16End": 29,
+          "maskedValue": "*****",
+          "valueHash": "48cfe066",
+          "confidence": 0.8
         }
       ]
     },
@@ -333,13 +464,21 @@
           "type": "PERSON",
           "start": 3,
           "end": 10,
-          "maskedValue": "*******"
+          "utf16Start": 3,
+          "utf16End": 10,
+          "maskedValue": "*******",
+          "valueHash": "8d034e8f",
+          "confidence": 0.8
         },
         {
           "type": "IN_PAN",
           "start": 79,
           "end": 89,
-          "maskedValue": "*******81D"
+          "utf16Start": 79,
+          "utf16End": 89,
+          "maskedValue": "*******81D",
+          "valueHash": "45438a37",
+          "confidence": 1.0
         }
       ]
     },
@@ -356,7 +495,11 @@
           "type": "MEDICAL_LICENSE",
           "start": 85,
           "end": 90,
-          "maskedValue": "****3"
+          "utf16Start": 85,
+          "utf16End": 90,
+          "maskedValue": "****3",
+          "valueHash": "91eb0bb6",
+          "confidence": 0.8999999999999999
         }
       ]
     },
@@ -373,31 +516,51 @@
           "type": "PERSON",
           "start": 3,
           "end": 7,
-          "maskedValue": "****"
+          "utf16Start": 3,
+          "utf16End": 7,
+          "maskedValue": "****",
+          "valueHash": "6d28815c",
+          "confidence": 0.8
         },
         {
           "type": "MRN",
           "start": 61,
           "end": 68,
-          "maskedValue": "*****18"
+          "utf16Start": 61,
+          "utf16End": 68,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 70,
           "end": 77,
-          "maskedValue": "*****02"
+          "utf16Start": 70,
+          "utf16End": 77,
+          "maskedValue": "*****02",
+          "valueHash": "48f5ff3e",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 79,
           "end": 86,
-          "maskedValue": "*****41"
+          "utf16Start": 79,
+          "utf16End": 86,
+          "maskedValue": "*****41",
+          "valueHash": "c8744f64",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 88,
           "end": 95,
-          "maskedValue": "*****88"
+          "utf16Start": 88,
+          "utf16End": 95,
+          "maskedValue": "*****88",
+          "valueHash": "135df071",
+          "confidence": 0.85
         }
       ]
     },
@@ -414,19 +577,31 @@
           "type": "PERSON",
           "start": 8,
           "end": 18,
-          "maskedValue": "**********"
+          "utf16Start": 8,
+          "utf16End": 18,
+          "maskedValue": "**********",
+          "valueHash": "b6304541",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 25,
           "end": 32,
-          "maskedValue": "*****15"
+          "utf16Start": 25,
+          "utf16End": 32,
+          "maskedValue": "*****15",
+          "valueHash": "293e89ad",
+          "confidence": 0.85
         },
         {
           "type": "IN_PHONE",
           "start": 126,
           "end": 136,
-          "maskedValue": "*******887"
+          "utf16Start": 126,
+          "utf16End": 136,
+          "maskedValue": "*******887",
+          "valueHash": "6db01050",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -443,19 +618,31 @@
           "type": "INSURANCE_POLICY",
           "start": 24,
           "end": 47,
-          "maskedValue": "*******************4567"
+          "utf16Start": 24,
+          "utf16End": 47,
+          "maskedValue": "*******************4567",
+          "valueHash": "51a0e1bb",
+          "confidence": 0.95
         },
         {
           "type": "INSURANCE_POLICY",
           "start": 87,
           "end": 103,
-          "maskedValue": "************1823"
+          "utf16Start": 87,
+          "utf16End": 103,
+          "maskedValue": "************1823",
+          "valueHash": "53ff9b22",
+          "confidence": 0.95
         },
         {
           "type": "INSURANCE_POLICY",
           "start": 131,
           "end": 146,
-          "maskedValue": "***********4520"
+          "utf16Start": 131,
+          "utf16End": 146,
+          "maskedValue": "***********4520",
+          "valueHash": "51039f6c",
+          "confidence": 0.75
         }
       ]
     },
@@ -472,19 +659,31 @@
           "type": "MRN",
           "start": 58,
           "end": 65,
-          "maskedValue": "*****30"
+          "utf16Start": 58,
+          "utf16End": 65,
+          "maskedValue": "*****30",
+          "valueHash": "0388c406",
+          "confidence": 0.85
         },
         {
           "type": "IN_AADHAAR",
           "start": 92,
           "end": 106,
-          "maskedValue": "**********4047"
+          "utf16Start": 92,
+          "utf16End": 106,
+          "maskedValue": "**********4047",
+          "valueHash": "4f845e22",
+          "confidence": 1.0
         },
         {
           "type": "IN_PHONE",
           "start": 144,
           "end": 154,
-          "maskedValue": "*******455"
+          "utf16Start": 144,
+          "utf16End": 154,
+          "maskedValue": "*******455",
+          "valueHash": "4985e13a",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -651,7 +850,11 @@
           "type": "EMAIL_ADDRESS",
           "start": 44,
           "end": 71,
-          "maskedValue": "********@sunrisehospital.in"
+          "utf16Start": 44,
+          "utf16End": 71,
+          "maskedValue": "********@sunrisehospital.in",
+          "valueHash": "123f3d1f",
+          "confidence": 0.7
         }
       ]
     },
@@ -713,13 +916,21 @@
           "type": "PERSON",
           "start": 24,
           "end": 36,
-          "maskedValue": "************"
+          "utf16Start": 24,
+          "utf16End": 36,
+          "maskedValue": "************",
+          "valueHash": "da44f850",
+          "confidence": 0.8
         },
         {
           "type": "MRN",
           "start": 44,
           "end": 51,
-          "maskedValue": "*****18"
+          "utf16Start": 44,
+          "utf16End": 51,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
         }
       ]
     },
@@ -731,49 +942,81 @@
           "type": "PERSON",
           "start": 8,
           "end": 11,
-          "maskedValue": "***"
+          "utf16Start": 8,
+          "utf16End": 11,
+          "maskedValue": "***",
+          "valueHash": "8ed936a9",
+          "confidence": 0.8
         },
         {
           "type": "PERSON",
           "start": 56,
           "end": 68,
-          "maskedValue": "************"
+          "utf16Start": 56,
+          "utf16End": 68,
+          "maskedValue": "************",
+          "valueHash": "da44f850",
+          "confidence": 0.8
         },
         {
           "type": "MRN",
           "start": 117,
           "end": 124,
-          "maskedValue": "*****18"
+          "utf16Start": 117,
+          "utf16End": 124,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 184,
           "end": 190,
-          "maskedValue": "******"
+          "utf16Start": 184,
+          "utf16End": 190,
+          "maskedValue": "******",
+          "valueHash": "a339598f",
+          "confidence": 0.95
         },
         {
           "type": "ICD10",
           "start": 221,
           "end": 224,
-          "maskedValue": "***"
+          "utf16Start": 221,
+          "utf16End": 224,
+          "maskedValue": "***",
+          "valueHash": "3f2e2b6d",
+          "confidence": 0.85
         },
         {
           "type": "IN_AADHAAR",
           "start": 287,
           "end": 301,
-          "maskedValue": "**********7460"
+          "utf16Start": 287,
+          "utf16End": 301,
+          "maskedValue": "**********7460",
+          "valueHash": "824e2e58",
+          "confidence": 1.0
         },
         {
           "type": "IN_PHONE",
           "start": 321,
           "end": 331,
-          "maskedValue": "*******345"
+          "utf16Start": 321,
+          "utf16End": 331,
+          "maskedValue": "*******345",
+          "valueHash": "6f43b820",
+          "confidence": 0.8500000000000001
         },
         {
           "type": "PERSON",
           "start": 345,
           "end": 352,
-          "maskedValue": "*******"
+          "utf16Start": 345,
+          "utf16End": 352,
+          "maskedValue": "*******",
+          "valueHash": "8d034e8f",
+          "confidence": 0.8
         }
       ]
     },
@@ -790,25 +1033,41 @@
           "type": "PERSON",
           "start": 21,
           "end": 38,
-          "maskedValue": "*****************"
+          "utf16Start": 21,
+          "utf16End": 38,
+          "maskedValue": "*****************",
+          "valueHash": "928086b2",
+          "confidence": 0.6
         },
         {
           "type": "DATE_OF_BIRTH",
           "start": 44,
           "end": 54,
-          "maskedValue": "**********"
+          "utf16Start": 44,
+          "utf16End": 54,
+          "maskedValue": "**********",
+          "valueHash": "1c41193e",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 61,
           "end": 67,
-          "maskedValue": "****23"
+          "utf16Start": 61,
+          "utf16End": 67,
+          "maskedValue": "****23",
+          "valueHash": "8039b790",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 113,
           "end": 118,
-          "maskedValue": "*****"
+          "utf16Start": 113,
+          "utf16End": 118,
+          "maskedValue": "*****",
+          "valueHash": "3b4fb277",
+          "confidence": 0.95
         }
       ]
     },
@@ -825,25 +1084,41 @@
           "type": "PERSON",
           "start": 3,
           "end": 7,
-          "maskedValue": "****"
+          "utf16Start": 3,
+          "utf16End": 7,
+          "maskedValue": "****",
+          "valueHash": "adb08c0b",
+          "confidence": 0.8
         },
         {
           "type": "PERSON",
           "start": 30,
           "end": 42,
-          "maskedValue": "************"
+          "utf16Start": 30,
+          "utf16End": 42,
+          "maskedValue": "************",
+          "valueHash": "4d5dd86a",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 49,
           "end": 56,
-          "maskedValue": "*****02"
+          "utf16Start": 49,
+          "utf16End": 56,
+          "maskedValue": "*****02",
+          "valueHash": "48f5ff3e",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 196,
           "end": 201,
-          "maskedValue": "*****"
+          "utf16Start": 196,
+          "utf16End": 201,
+          "maskedValue": "*****",
+          "valueHash": "d400a9a1",
+          "confidence": 0.95
         }
       ]
     },
@@ -870,25 +1145,41 @@
           "type": "PERSON",
           "start": 15,
           "end": 34,
-          "maskedValue": "*******************"
+          "utf16Start": 15,
+          "utf16End": 34,
+          "maskedValue": "*******************",
+          "valueHash": "49f5894e",
+          "confidence": 0.6
         },
         {
           "type": "MRN",
           "start": 41,
           "end": 48,
-          "maskedValue": "*****41"
+          "utf16Start": 41,
+          "utf16End": 48,
+          "maskedValue": "*****41",
+          "valueHash": "c8744f64",
+          "confidence": 0.85
         },
         {
           "type": "PERSON",
           "start": 239,
           "end": 252,
-          "maskedValue": "*************"
+          "utf16Start": 239,
+          "utf16End": 252,
+          "maskedValue": "*************",
+          "valueHash": "7091e9d9",
+          "confidence": 0.8
         },
         {
           "type": "MEDICAL_LICENSE",
           "start": 262,
           "end": 267,
-          "maskedValue": "****3"
+          "utf16Start": 262,
+          "utf16End": 267,
+          "maskedValue": "****3",
+          "valueHash": "91eb0bb6",
+          "confidence": 0.8999999999999999
         }
       ]
     },
@@ -905,19 +1196,31 @@
           "type": "PERSON",
           "start": 9,
           "end": 23,
-          "maskedValue": "**************"
+          "utf16Start": 9,
+          "utf16End": 23,
+          "maskedValue": "**************",
+          "valueHash": "3aed91a2",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 35,
           "end": 42,
-          "maskedValue": "*****88"
+          "utf16Start": 35,
+          "utf16End": 42,
+          "maskedValue": "*****88",
+          "valueHash": "135df071",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 74,
           "end": 81,
-          "maskedValue": "*******"
+          "utf16Start": 74,
+          "utf16End": 81,
+          "maskedValue": "*******",
+          "valueHash": "4b415836",
+          "confidence": 0.95
         }
       ]
     },
@@ -934,37 +1237,61 @@
           "type": "PERSON",
           "start": 36,
           "end": 52,
-          "maskedValue": "****************"
+          "utf16Start": 36,
+          "utf16End": 52,
+          "maskedValue": "****************",
+          "valueHash": "1e83862b",
+          "confidence": 0.8
         },
         {
           "type": "ABHA_NUMBER",
           "start": 59,
           "end": 76,
-          "maskedValue": "*************2226"
+          "utf16Start": 59,
+          "utf16End": 76,
+          "maskedValue": "*************2226",
+          "valueHash": "94dffafd",
+          "confidence": 1.0
         },
         {
           "type": "ICD10",
           "start": 108,
           "end": 113,
-          "maskedValue": "*****"
+          "utf16Start": 108,
+          "utf16End": 113,
+          "maskedValue": "*****",
+          "valueHash": "3776f913",
+          "confidence": 0.75
         },
         {
           "type": "ICD10",
           "start": 206,
           "end": 211,
-          "maskedValue": "*****"
+          "utf16Start": 206,
+          "utf16End": 211,
+          "maskedValue": "*****",
+          "valueHash": "ce7505c6",
+          "confidence": 0.75
         },
         {
           "type": "IN_PHONE",
           "start": 236,
           "end": 251,
-          "maskedValue": "***********2345"
+          "utf16Start": 236,
+          "utf16End": 251,
+          "maskedValue": "***********2345",
+          "valueHash": "af9b013a",
+          "confidence": 0.65
         },
         {
           "type": "PERSON",
           "start": 257,
           "end": 268,
-          "maskedValue": "***********"
+          "utf16Start": 257,
+          "utf16End": 268,
+          "maskedValue": "***********",
+          "valueHash": "b47563c6",
+          "confidence": 0.8
         }
       ]
     },
@@ -976,7 +1303,11 @@
           "type": "PATIENT_VISIT_ID",
           "start": 30,
           "end": 40,
-          "maskedValue": "*******512"
+          "utf16Start": 30,
+          "utf16End": 40,
+          "maskedValue": "*******512",
+          "valueHash": "66af5425",
+          "confidence": 0.8
         }
       ]
     },
@@ -988,13 +1319,21 @@
           "type": "PATIENT_VISIT_ID",
           "start": 41,
           "end": 51,
-          "maskedValue": "*******512"
+          "utf16Start": 41,
+          "utf16End": 51,
+          "maskedValue": "*******512",
+          "valueHash": "66af5425",
+          "confidence": 0.8
         },
         {
           "type": "ICD10",
           "start": 101,
           "end": 109,
-          "maskedValue": "********"
+          "utf16Start": 101,
+          "utf16End": 109,
+          "maskedValue": "********",
+          "valueHash": "7d6db791",
+          "confidence": 0.95
         }
       ]
     },
@@ -1011,19 +1350,31 @@
           "type": "PERSON",
           "start": 8,
           "end": 22,
-          "maskedValue": "**************"
+          "utf16Start": 8,
+          "utf16End": 22,
+          "maskedValue": "**************",
+          "valueHash": "49676efe",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 29,
           "end": 36,
-          "maskedValue": "*****15"
+          "utf16Start": 29,
+          "utf16End": 36,
+          "maskedValue": "*****15",
+          "valueHash": "5d635311",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 112,
           "end": 115,
-          "maskedValue": "***"
+          "utf16Start": 112,
+          "utf16End": 115,
+          "maskedValue": "***",
+          "valueHash": "4afa92e6",
+          "confidence": 0.85
         }
       ]
     },
@@ -1040,25 +1391,41 @@
           "type": "MRN",
           "start": 13,
           "end": 20,
-          "maskedValue": "*****18"
+          "utf16Start": 13,
+          "utf16End": 20,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 95,
           "end": 102,
-          "maskedValue": "*****02"
+          "utf16Start": 95,
+          "utf16End": 102,
+          "maskedValue": "*****02",
+          "valueHash": "48f5ff3e",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 161,
           "end": 168,
-          "maskedValue": "*****41"
+          "utf16Start": 161,
+          "utf16End": 168,
+          "maskedValue": "*****41",
+          "valueHash": "c8744f64",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 192,
           "end": 197,
-          "maskedValue": "*****"
+          "utf16Start": 192,
+          "utf16End": 197,
+          "maskedValue": "*****",
+          "valueHash": "51fd9e64",
+          "confidence": 0.75
         }
       ]
     },
@@ -1070,7 +1437,11 @@
           "type": "LAB_ACCESSION",
           "start": 22,
           "end": 35,
-          "maskedValue": "*********1842"
+          "utf16Start": 22,
+          "utf16End": 35,
+          "maskedValue": "*********1842",
+          "valueHash": "f3943991",
+          "confidence": 0.8
         }
       ]
     },
@@ -1082,25 +1453,41 @@
           "type": "LAB_ACCESSION",
           "start": 45,
           "end": 58,
-          "maskedValue": "*********1842"
+          "utf16Start": 45,
+          "utf16End": 58,
+          "maskedValue": "*********1842",
+          "valueHash": "f3943991",
+          "confidence": 0.8
         },
         {
           "type": "PERSON",
           "start": 68,
           "end": 81,
-          "maskedValue": "*************"
+          "utf16Start": 68,
+          "utf16End": 81,
+          "maskedValue": "*************",
+          "valueHash": "b94a314d",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 88,
           "end": 95,
-          "maskedValue": "*****20"
+          "utf16Start": 88,
+          "utf16End": 95,
+          "maskedValue": "*****20",
+          "valueHash": "3c273816",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 215,
           "end": 222,
-          "maskedValue": "*******"
+          "utf16Start": 215,
+          "utf16End": 222,
+          "maskedValue": "*******",
+          "valueHash": "20d57d88",
+          "confidence": 0.95
         }
       ]
     },
@@ -1117,31 +1504,51 @@
           "type": "PERSON",
           "start": 8,
           "end": 21,
-          "maskedValue": "*************"
+          "utf16Start": 8,
+          "utf16End": 21,
+          "maskedValue": "*************",
+          "valueHash": "18ab3efd",
+          "confidence": 0.78
         },
         {
           "type": "ABHA_NUMBER",
           "start": 28,
           "end": 45,
-          "maskedValue": "*************7260"
+          "utf16Start": 28,
+          "utf16End": 45,
+          "maskedValue": "*************7260",
+          "valueHash": "2603ac5e",
+          "confidence": 1.0
         },
         {
           "type": "IN_PHONE",
           "start": 126,
           "end": 136,
-          "maskedValue": "*******512"
+          "utf16Start": 126,
+          "utf16End": 136,
+          "maskedValue": "*******512",
+          "valueHash": "4e2ce20d",
+          "confidence": 0.8500000000000001
         },
         {
           "type": "PERSON",
           "start": 161,
           "end": 165,
-          "maskedValue": "****"
+          "utf16Start": 161,
+          "utf16End": 165,
+          "maskedValue": "****",
+          "valueHash": "6d28815c",
+          "confidence": 0.8
         },
         {
           "type": "EMAIL_ADDRESS",
           "start": 191,
           "end": 214,
-          "maskedValue": "*************@gmail.com"
+          "utf16Start": 191,
+          "utf16End": 214,
+          "maskedValue": "*************@gmail.com",
+          "valueHash": "cfa41716",
+          "confidence": 0.7
         }
       ]
     },
@@ -1158,19 +1565,31 @@
           "type": "PERSON",
           "start": 54,
           "end": 65,
-          "maskedValue": "***********"
+          "utf16Start": 54,
+          "utf16End": 65,
+          "maskedValue": "***********",
+          "valueHash": "aa1cf50d",
+          "confidence": 0.8
         },
         {
           "type": "MRN",
           "start": 72,
           "end": 79,
-          "maskedValue": "*****04"
+          "utf16Start": 72,
+          "utf16End": 79,
+          "maskedValue": "*****04",
+          "valueHash": "d1572110",
+          "confidence": 0.85
         },
         {
           "type": "DATE_OF_BIRTH",
           "start": 85,
           "end": 95,
-          "maskedValue": "**********"
+          "utf16Start": 85,
+          "utf16End": 95,
+          "maskedValue": "**********",
+          "valueHash": "fdf10236",
+          "confidence": 0.85
         }
       ]
     },
@@ -1187,7 +1606,11 @@
           "type": "ICD10",
           "start": 90,
           "end": 95,
-          "maskedValue": "*****"
+          "utf16Start": 90,
+          "utf16End": 95,
+          "maskedValue": "*****",
+          "valueHash": "630d3651",
+          "confidence": 0.95
         }
       ]
     },
@@ -1204,25 +1627,41 @@
           "type": "MRN",
           "start": 33,
           "end": 40,
-          "maskedValue": "*****30"
+          "utf16Start": 33,
+          "utf16End": 40,
+          "maskedValue": "*****30",
+          "valueHash": "0388c406",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 76,
           "end": 81,
-          "maskedValue": "*****"
+          "utf16Start": 76,
+          "utf16End": 81,
+          "maskedValue": "*****",
+          "valueHash": "0e13ccd0",
+          "confidence": 0.95
         },
         {
           "type": "ICD10",
           "start": 118,
           "end": 124,
-          "maskedValue": "******"
+          "utf16Start": 118,
+          "utf16End": 124,
+          "maskedValue": "******",
+          "valueHash": "2a038bf4",
+          "confidence": 0.95
         },
         {
           "type": "IN_AADHAAR",
           "start": 247,
           "end": 261,
-          "maskedValue": "**********9197"
+          "utf16Start": 247,
+          "utf16End": 261,
+          "maskedValue": "**********9197",
+          "valueHash": "781b982a",
+          "confidence": 1.0
         }
       ]
     },
@@ -1239,7 +1678,11 @@
           "type": "ICD10",
           "start": 52,
           "end": 55,
-          "maskedValue": "***"
+          "utf16Start": 52,
+          "utf16End": 55,
+          "maskedValue": "***",
+          "valueHash": "4b9427f7",
+          "confidence": 0.85
         }
       ]
     },
@@ -1256,19 +1699,31 @@
           "type": "PERSON",
           "start": 8,
           "end": 18,
-          "maskedValue": "**********"
+          "utf16Start": 8,
+          "utf16End": 18,
+          "maskedValue": "**********",
+          "valueHash": "b6304541",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 25,
           "end": 32,
-          "maskedValue": "*****15"
+          "utf16Start": 25,
+          "utf16End": 32,
+          "maskedValue": "*****15",
+          "valueHash": "293e89ad",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 98,
           "end": 103,
-          "maskedValue": "*****"
+          "utf16Start": 98,
+          "utf16End": 103,
+          "maskedValue": "*****",
+          "valueHash": "4c25f7d8",
+          "confidence": 0.95
         }
       ]
     },
@@ -1285,13 +1740,21 @@
           "type": "ICD10",
           "start": 38,
           "end": 46,
-          "maskedValue": "********"
+          "utf16Start": 38,
+          "utf16End": 46,
+          "maskedValue": "********",
+          "valueHash": "9ec49e03",
+          "confidence": 0.95
         },
         {
           "type": "MRN",
           "start": 68,
           "end": 75,
-          "maskedValue": "*****18"
+          "utf16Start": 68,
+          "utf16End": 75,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
         }
       ]
     },
@@ -1308,25 +1771,41 @@
           "type": "ICD10",
           "start": 78,
           "end": 83,
-          "maskedValue": "*****"
+          "utf16Start": 78,
+          "utf16End": 83,
+          "maskedValue": "*****",
+          "valueHash": "9048d94d",
+          "confidence": 0.95
         },
         {
           "type": "MRN",
           "start": 92,
           "end": 99,
-          "maskedValue": "*****01"
+          "utf16Start": 92,
+          "utf16End": 99,
+          "maskedValue": "*****01",
+          "valueHash": "14eb6845",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 101,
           "end": 108,
-          "maskedValue": "*****07"
+          "utf16Start": 101,
+          "utf16End": 108,
+          "maskedValue": "*****07",
+          "valueHash": "0eeb5ed3",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 113,
           "end": 120,
-          "maskedValue": "*****14"
+          "utf16Start": 113,
+          "utf16End": 120,
+          "maskedValue": "*****14",
+          "valueHash": "9dee7e87",
+          "confidence": 0.85
         }
       ]
     },
@@ -1343,13 +1822,21 @@
           "type": "MRN",
           "start": 66,
           "end": 73,
-          "maskedValue": "*****12"
+          "utf16Start": 66,
+          "utf16End": 73,
+          "maskedValue": "*****12",
+          "valueHash": "4b6f4b5b",
+          "confidence": 0.85
         },
         {
           "type": "MRN",
           "start": 126,
           "end": 133,
-          "maskedValue": "*****40"
+          "utf16Start": 126,
+          "utf16End": 133,
+          "maskedValue": "*****40",
+          "valueHash": "bf76bdbc",
+          "confidence": 0.85
         }
       ]
     },
@@ -1366,7 +1853,11 @@
           "type": "PATIENT_VISIT_ID",
           "start": 49,
           "end": 59,
-          "maskedValue": "*******588"
+          "utf16Start": 49,
+          "utf16End": 59,
+          "maskedValue": "*******588",
+          "valueHash": "66c09d46",
+          "confidence": 0.8
         }
       ]
     },
@@ -1383,25 +1874,41 @@
           "type": "PERSON",
           "start": 8,
           "end": 28,
-          "maskedValue": "********************"
+          "utf16Start": 8,
+          "utf16End": 28,
+          "maskedValue": "********************",
+          "valueHash": "2186638e",
+          "confidence": 0.78
         },
         {
           "type": "MRN",
           "start": 35,
           "end": 42,
-          "maskedValue": "*****11"
+          "utf16Start": 35,
+          "utf16End": 42,
+          "maskedValue": "*****11",
+          "valueHash": "3c014c20",
+          "confidence": 0.85
         },
         {
           "type": "ABHA_NUMBER",
           "start": 49,
           "end": 66,
-          "maskedValue": "*************7011"
+          "utf16Start": 49,
+          "utf16End": 66,
+          "maskedValue": "*************7011",
+          "valueHash": "8a6ace1e",
+          "confidence": 1.0
         },
         {
           "type": "IN_PHONE",
           "start": 233,
           "end": 243,
-          "maskedValue": "*******334"
+          "utf16Start": 233,
+          "utf16End": 243,
+          "maskedValue": "*******334",
+          "valueHash": "04207b6d",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -1418,7 +1925,11 @@
           "type": "ABHA_ADDRESS",
           "start": 17,
           "end": 34,
-          "maskedValue": "*************abdm"
+          "utf16Start": 17,
+          "utf16End": 34,
+          "maskedValue": "*************abdm",
+          "valueHash": "04b5e77a",
+          "confidence": 0.9
         }
       ]
     },
@@ -1435,7 +1946,11 @@
           "type": "MRN",
           "start": 34,
           "end": 41,
-          "maskedValue": "*****02"
+          "utf16Start": 34,
+          "utf16End": 41,
+          "maskedValue": "*****02",
+          "valueHash": "48f5ff3e",
+          "confidence": 0.85
         }
       ]
     },
@@ -1452,7 +1967,11 @@
           "type": "ICD10",
           "start": 67,
           "end": 73,
-          "maskedValue": "******"
+          "utf16Start": 67,
+          "utf16End": 73,
+          "maskedValue": "******",
+          "valueHash": "c4d5abdc",
+          "confidence": 0.95
         }
       ]
     },
@@ -1464,7 +1983,11 @@
           "type": "IN_AADHAAR",
           "start": 41,
           "end": 55,
-          "maskedValue": "**********3784"
+          "utf16Start": 41,
+          "utf16End": 55,
+          "maskedValue": "**********3784",
+          "valueHash": "f7a27534",
+          "confidence": 1.0
         }
       ]
     },
@@ -1476,7 +1999,11 @@
           "type": "IN_AADHAAR",
           "start": 34,
           "end": 48,
-          "maskedValue": "**********3292"
+          "utf16Start": 34,
+          "utf16End": 48,
+          "maskedValue": "**********3292",
+          "valueHash": "7a09318f",
+          "confidence": 0.8
         }
       ]
     },
@@ -1488,7 +2015,11 @@
           "type": "IN_AADHAAR",
           "start": 4,
           "end": 16,
-          "maskedValue": "********0472"
+          "utf16Start": 4,
+          "utf16End": 16,
+          "maskedValue": "********0472",
+          "valueHash": "e6b6fc0b",
+          "confidence": 1.0
         }
       ]
     },
@@ -1505,7 +2036,11 @@
           "type": "IN_AADHAAR",
           "start": 13,
           "end": 27,
-          "maskedValue": "**********2719"
+          "utf16Start": 13,
+          "utf16End": 27,
+          "maskedValue": "**********2719",
+          "valueHash": "78a9e997",
+          "confidence": 1.0
         }
       ]
     },
@@ -1517,13 +2052,21 @@
           "type": "IN_AADHAAR",
           "start": 17,
           "end": 31,
-          "maskedValue": "**********4596"
+          "utf16Start": 17,
+          "utf16End": 31,
+          "maskedValue": "**********4596",
+          "valueHash": "136529de",
+          "confidence": 1.0
         },
         {
           "type": "IN_AADHAAR",
           "start": 53,
           "end": 67,
-          "maskedValue": "**********3818"
+          "utf16Start": 53,
+          "utf16End": 67,
+          "maskedValue": "**********3818",
+          "valueHash": "32c34578",
+          "confidence": 1.0
         }
       ]
     },
@@ -1535,7 +2078,11 @@
           "type": "IN_PAN",
           "start": 4,
           "end": 14,
-          "maskedValue": "*******06K"
+          "utf16Start": 4,
+          "utf16End": 14,
+          "maskedValue": "*******06K",
+          "valueHash": "a1b146ab",
+          "confidence": 1.0
         }
       ]
     },
@@ -1547,7 +2094,11 @@
           "type": "IN_PAN",
           "start": 36,
           "end": 46,
-          "maskedValue": "*******07Y"
+          "utf16Start": 36,
+          "utf16End": 46,
+          "maskedValue": "*******07Y",
+          "valueHash": "1199bf6f",
+          "confidence": 1.0
         }
       ]
     },
@@ -1559,7 +2110,11 @@
           "type": "ABHA_NUMBER",
           "start": 12,
           "end": 29,
-          "maskedValue": "*************7473"
+          "utf16Start": 12,
+          "utf16End": 29,
+          "maskedValue": "*************7473",
+          "valueHash": "94465f09",
+          "confidence": 1.0
         }
       ]
     },
@@ -1571,7 +2126,11 @@
           "type": "ABHA_NUMBER",
           "start": 39,
           "end": 53,
-          "maskedValue": "**********7766"
+          "utf16Start": 39,
+          "utf16End": 53,
+          "maskedValue": "**********7766",
+          "valueHash": "b95428c9",
+          "confidence": 0.75
         }
       ]
     },
@@ -1583,7 +2142,11 @@
           "type": "ABHA_ADDRESS",
           "start": 25,
           "end": 41,
-          "maskedValue": "************abdm"
+          "utf16Start": 25,
+          "utf16End": 41,
+          "maskedValue": "************abdm",
+          "valueHash": "42448ca4",
+          "confidence": 0.9
         }
       ]
     },
@@ -1595,7 +2158,11 @@
           "type": "ABHA_ADDRESS",
           "start": 57,
           "end": 71,
-          "maskedValue": "**********@sbx"
+          "utf16Start": 57,
+          "utf16End": 71,
+          "maskedValue": "**********@sbx",
+          "valueHash": "1c363a8e",
+          "confidence": 0.9
         }
       ]
     },
@@ -1607,7 +2174,11 @@
           "type": "MRN",
           "start": 5,
           "end": 12,
-          "maskedValue": "*****19"
+          "utf16Start": 5,
+          "utf16End": 12,
+          "maskedValue": "*****19",
+          "valueHash": "ccb10c67",
+          "confidence": 0.85
         }
       ]
     },
@@ -1619,7 +2190,11 @@
           "type": "MRN",
           "start": 5,
           "end": 11,
-          "maskedValue": "****01"
+          "utf16Start": 5,
+          "utf16End": 11,
+          "maskedValue": "****01",
+          "valueHash": "e524ca60",
+          "confidence": 0.85
         }
       ]
     },
@@ -1631,7 +2206,11 @@
           "type": "MRN",
           "start": 11,
           "end": 26,
-          "maskedValue": "***********4417"
+          "utf16Start": 11,
+          "utf16End": 26,
+          "maskedValue": "***********4417",
+          "valueHash": "e577f835",
+          "confidence": 0.85
         }
       ]
     },
@@ -1643,7 +2222,11 @@
           "type": "MRN",
           "start": 13,
           "end": 20,
-          "maskedValue": "*****71"
+          "utf16Start": 13,
+          "utf16End": 20,
+          "maskedValue": "*****71",
+          "valueHash": "628d0455",
+          "confidence": 0.85
         }
       ]
     },
@@ -1655,7 +2238,11 @@
           "type": "PATIENT_VISIT_ID",
           "start": 6,
           "end": 16,
-          "maskedValue": "*******120"
+          "utf16Start": 6,
+          "utf16End": 16,
+          "maskedValue": "*******120",
+          "valueHash": "581b7335",
+          "confidence": 0.8
         }
       ]
     },
@@ -1667,7 +2254,11 @@
           "type": "PATIENT_VISIT_ID",
           "start": 7,
           "end": 21,
-          "maskedValue": "**********8110"
+          "utf16Start": 7,
+          "utf16End": 21,
+          "maskedValue": "**********8110",
+          "valueHash": "cbe49ae0",
+          "confidence": 0.8
         }
       ]
     },
@@ -1679,19 +2270,31 @@
           "type": "ICD10",
           "start": 24,
           "end": 29,
-          "maskedValue": "*****"
+          "utf16Start": 24,
+          "utf16End": 29,
+          "maskedValue": "*****",
+          "valueHash": "4ca74d3d",
+          "confidence": 0.95
         },
         {
           "type": "ICD10",
           "start": 48,
           "end": 51,
-          "maskedValue": "***"
+          "utf16Start": 48,
+          "utf16End": 51,
+          "maskedValue": "***",
+          "valueHash": "3f2e2b6d",
+          "confidence": 0.85
         },
         {
           "type": "ICD10",
           "start": 77,
           "end": 82,
-          "maskedValue": "*****"
+          "utf16Start": 77,
+          "utf16End": 82,
+          "maskedValue": "*****",
+          "valueHash": "441c836d",
+          "confidence": 0.95
         }
       ]
     },
@@ -1703,7 +2306,11 @@
           "type": "ICD10",
           "start": 27,
           "end": 32,
-          "maskedValue": "*****"
+          "utf16Start": 27,
+          "utf16End": 32,
+          "maskedValue": "*****",
+          "valueHash": "b56ebb67",
+          "confidence": 0.95
         }
       ]
     },
@@ -1715,7 +2322,11 @@
           "type": "IN_PHONE",
           "start": 31,
           "end": 41,
-          "maskedValue": "*******456"
+          "utf16Start": 31,
+          "utf16End": 41,
+          "maskedValue": "*******456",
+          "valueHash": "5fd6d7a8",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -1727,7 +2338,11 @@
           "type": "IN_PHONE",
           "start": 13,
           "end": 28,
-          "maskedValue": "***********3221"
+          "utf16Start": 13,
+          "utf16End": 28,
+          "maskedValue": "***********3221",
+          "valueHash": "b577565d",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -1739,7 +2354,11 @@
           "type": "IN_PHONE",
           "start": 18,
           "end": 29,
-          "maskedValue": "********445"
+          "utf16Start": 18,
+          "utf16End": 29,
+          "maskedValue": "********445",
+          "valueHash": "de0c8438",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -1751,7 +2370,11 @@
           "type": "EMAIL_ADDRESS",
           "start": 34,
           "end": 62,
-          "maskedValue": "****************@yahoo.co.in"
+          "utf16Start": 34,
+          "utf16End": 62,
+          "maskedValue": "****************@yahoo.co.in",
+          "valueHash": "f9d09499",
+          "confidence": 0.7
         }
       ]
     },
@@ -1763,7 +2386,11 @@
           "type": "DATE_OF_BIRTH",
           "start": 26,
           "end": 36,
-          "maskedValue": "**********"
+          "utf16Start": 26,
+          "utf16End": 36,
+          "maskedValue": "**********",
+          "valueHash": "f492d283",
+          "confidence": 0.85
         }
       ]
     },
@@ -1775,7 +2402,11 @@
           "type": "DATE_OF_BIRTH",
           "start": 5,
           "end": 18,
-          "maskedValue": "*************"
+          "utf16Start": 5,
+          "utf16End": 18,
+          "maskedValue": "*************",
+          "valueHash": "b74e4b50",
+          "confidence": 0.85
         }
       ]
     },
@@ -1787,7 +2418,11 @@
           "type": "PERSON",
           "start": 28,
           "end": 48,
-          "maskedValue": "********************"
+          "utf16Start": 28,
+          "utf16End": 48,
+          "maskedValue": "********************",
+          "valueHash": "9234e062",
+          "confidence": 0.8
         }
       ]
     },
@@ -1799,7 +2434,11 @@
           "type": "INSURANCE_POLICY",
           "start": 11,
           "end": 31,
-          "maskedValue": "****************1204"
+          "utf16Start": 11,
+          "utf16End": 31,
+          "maskedValue": "****************1204",
+          "valueHash": "7785000d",
+          "confidence": 0.85
         }
       ]
     },
@@ -1811,7 +2450,11 @@
           "type": "LAB_ACCESSION",
           "start": 17,
           "end": 33,
-          "maskedValue": "************1185"
+          "utf16Start": 17,
+          "utf16End": 33,
+          "maskedValue": "************1185",
+          "valueHash": "6988f808",
+          "confidence": 0.8
         }
       ]
     },
@@ -1823,13 +2466,21 @@
           "type": "PERSON",
           "start": 13,
           "end": 28,
-          "maskedValue": "***************"
+          "utf16Start": 13,
+          "utf16End": 28,
+          "maskedValue": "***************",
+          "valueHash": "3055c1ac",
+          "confidence": 0.8
         },
         {
           "type": "MEDICAL_LICENSE",
           "start": 55,
           "end": 63,
-          "maskedValue": "******72"
+          "utf16Start": 55,
+          "utf16End": 63,
+          "maskedValue": "******72",
+          "valueHash": "030f9629",
+          "confidence": 0.8999999999999999
         }
       ]
     },
@@ -1841,13 +2492,21 @@
           "type": "BANK_ACCOUNT",
           "start": 29,
           "end": 41,
-          "maskedValue": "********8823"
+          "utf16Start": 29,
+          "utf16End": 41,
+          "maskedValue": "********8823",
+          "valueHash": "ad83660d",
+          "confidence": 0.8
         },
         {
           "type": "IN_IFSC",
           "start": 50,
           "end": 61,
-          "maskedValue": "********2LA"
+          "utf16Start": 50,
+          "utf16End": 61,
+          "maskedValue": "********2LA",
+          "valueHash": "901cfb92",
+          "confidence": 0.8500000000000001
         }
       ]
     },
@@ -1859,7 +2518,11 @@
           "type": "IN_UPI",
           "start": 30,
           "end": 44,
-          "maskedValue": "**********@ybl"
+          "utf16Start": 30,
+          "utf16End": 44,
+          "maskedValue": "**********@ybl",
+          "valueHash": "ebd278fd",
+          "confidence": 0.85
         }
       ]
     },
@@ -1871,7 +2534,11 @@
           "type": "IN_PASSPORT",
           "start": 9,
           "end": 17,
-          "maskedValue": "******82"
+          "utf16Start": 9,
+          "utf16End": 17,
+          "maskedValue": "******82",
+          "valueHash": "60d0ffeb",
+          "confidence": 0.85
         }
       ]
     },
@@ -1883,7 +2550,11 @@
           "type": "IN_DRIVING_LICENSE",
           "start": 47,
           "end": 62,
-          "maskedValue": "***********4821"
+          "utf16Start": 47,
+          "utf16End": 62,
+          "maskedValue": "***********4821",
+          "valueHash": "ffaf36db",
+          "confidence": 0.8
         }
       ]
     },
@@ -1900,7 +2571,11 @@
           "type": "ICD10",
           "start": 20,
           "end": 25,
-          "maskedValue": "*****"
+          "utf16Start": 20,
+          "utf16End": 25,
+          "maskedValue": "*****",
+          "valueHash": "20b3acac",
+          "confidence": 0.95
         }
       ]
     },
@@ -1912,7 +2587,11 @@
           "type": "ICD10",
           "start": 30,
           "end": 35,
-          "maskedValue": "*****"
+          "utf16Start": 30,
+          "utf16End": 35,
+          "maskedValue": "*****",
+          "valueHash": "24b83026",
+          "confidence": 0.95
         }
       ]
     },
@@ -1924,7 +2603,11 @@
           "type": "ICD10",
           "start": 17,
           "end": 23,
-          "maskedValue": "******"
+          "utf16Start": 17,
+          "utf16End": 23,
+          "maskedValue": "******",
+          "valueHash": "424ce9ae",
+          "confidence": 0.95
         }
       ]
     },
@@ -2129,6 +2812,26 @@
       "entities": []
     },
     {
+      "id": "neg-procurement-invoice-001.subject",
+      "text": "Invoice no 812806192057 for the ward furniture order",
+      "entities": []
+    },
+    {
+      "id": "neg-procurement-invoice-001.body",
+      "text": "Invoice no 812806192057 raised against the purchase order placed last month.\nThe vendor has asked us to clear it before the quarter closes.\nNo patient records are attached to this thread.",
+      "entities": []
+    },
+    {
+      "id": "neg-procurement-transaction-001.subject",
+      "text": "Vendor transaction id 748233725236 settled",
+      "entities": []
+    },
+    {
+      "id": "neg-procurement-transaction-001.body",
+      "text": "Vendor transaction id 748233725236 was settled against the GST invoice yesterday.\nFinance has the receipt; nothing here needs clinical review.",
+      "entities": []
+    },
+    {
       "id": "unicode.aadhaar-devanagari-digits",
       "text": "Aadhaar \u096d\u096b\u0969\u096a \u096d\u096f\u0969\u0966 \u096d\u096a\u096c\u0966 collected at the enrolment camp.",
       "entities": [
@@ -2136,7 +2839,11 @@
           "type": "IN_AADHAAR",
           "start": 8,
           "end": 22,
-          "maskedValue": "**********\u096d\u096a\u096c\u0966"
+          "utf16Start": 8,
+          "utf16End": 22,
+          "maskedValue": "**********\u096d\u096a\u096c\u0966",
+          "valueHash": "e6a8bfbc",
+          "confidence": 1.0
         }
       ]
     },
@@ -2148,7 +2855,11 @@
           "type": "IN_AADHAAR",
           "start": 5,
           "end": 19,
-          "maskedValue": "**********7460"
+          "utf16Start": 5,
+          "utf16End": 19,
+          "maskedValue": "**********7460",
+          "valueHash": "824e2e58",
+          "confidence": 0.8
         }
       ]
     },
@@ -2160,7 +2871,11 @@
           "type": "IN_PAN",
           "start": 4,
           "end": 15,
-          "maskedValue": "********75Q"
+          "utf16Start": 4,
+          "utf16End": 15,
+          "maskedValue": "********75Q",
+          "valueHash": "cec8c32b",
+          "confidence": 1.0
         }
       ]
     },
@@ -2172,7 +2887,11 @@
           "type": "IN_PAN",
           "start": 4,
           "end": 15,
-          "maskedValue": "********75Q"
+          "utf16Start": 4,
+          "utf16End": 15,
+          "maskedValue": "********75Q",
+          "valueHash": "cec8c32b",
+          "confidence": 1.0
         }
       ]
     },
@@ -2184,7 +2903,11 @@
           "type": "MRN",
           "start": 5,
           "end": 12,
-          "maskedValue": "*****\uff11\uff18"
+          "utf16Start": 5,
+          "utf16End": 12,
+          "maskedValue": "*****\uff11\uff18",
+          "valueHash": "db1f7a14",
+          "confidence": 0.85
         }
       ]
     },
@@ -2196,7 +2919,159 @@
           "type": "IN_PHONE",
           "start": 22,
           "end": 32,
-          "maskedValue": "*******\u096a\u096b\u096c"
+          "utf16Start": 22,
+          "utf16End": 32,
+          "maskedValue": "*******\u096a\u096b\u096c",
+          "valueHash": "1933764a",
+          "confidence": 0.8500000000000001
+        }
+      ]
+    },
+    {
+      "id": "unicode.context-term-after-devanagari-bank",
+      "text": "\u092c\u0948\u0902\u0915bank branch code TEMP0000123 for the refund.",
+      "entities": [
+        {
+          "type": "IN_IFSC",
+          "start": 21,
+          "end": 32,
+          "utf16Start": 21,
+          "utf16End": 32,
+          "maskedValue": "********123",
+          "valueHash": "4c282de9",
+          "confidence": 0.8500000000000001
+        }
+      ]
+    },
+    {
+      "id": "unicode.context-term-after-devanagari-passport",
+      "text": "\u092a\u093e\u0938\u092a\u094b\u0930\u094d\u091fpassport M8231765 checked at immigration.",
+      "entities": [
+        {
+          "type": "IN_PASSPORT",
+          "start": 17,
+          "end": 25,
+          "utf16Start": 17,
+          "utf16End": 25,
+          "maskedValue": "******65",
+          "valueHash": "b457f9a2",
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "id": "unicode.context-term-after-devanagari-abha",
+      "text": "\u0938\u094d\u0935\u093e\u0938\u094d\u0925\u094d\u092fabha 91234567890123 registered today.",
+      "entities": [
+        {
+          "type": "ABHA_NUMBER",
+          "start": 14,
+          "end": 28,
+          "utf16Start": 14,
+          "utf16End": 28,
+          "maskedValue": "**********0123",
+          "valueHash": "be72aa53",
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "id": "unicode.context-term-after-devanagari-voter",
+      "text": "\u092e\u0924\u0926\u093e\u0928voter epic ABC1234567 verified.",
+      "entities": [
+        {
+          "type": "IN_VOTER_ID",
+          "start": 16,
+          "end": 26,
+          "utf16Start": 16,
+          "utf16End": 26,
+          "maskedValue": "*******567",
+          "valueHash": "77dc73f1",
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "id": "unicode.context-term-after-devanagari-patient",
+      "text": "\u0905\u0938\u094d\u092a\u0924\u093e\u0932patient diagnosis E11 recorded at discharge.",
+      "entities": [
+        {
+          "type": "ICD10",
+          "start": 25,
+          "end": 28,
+          "utf16Start": 25,
+          "utf16End": 28,
+          "maskedValue": "***",
+          "valueHash": "8bfbf7d6",
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "id": "unicode.astral-emoji-before-aadhaar",
+      "text": "\ud83d\udcce Aadhaar 7534 7930 7460 issued at the enrolment camp.",
+      "entities": [
+        {
+          "type": "IN_AADHAAR",
+          "start": 10,
+          "end": 24,
+          "utf16Start": 11,
+          "utf16End": 25,
+          "maskedValue": "**********7460",
+          "valueHash": "824e2e58",
+          "confidence": 1.0
+        }
+      ]
+    },
+    {
+      "id": "unicode.astral-family-emoji-before-pan",
+      "text": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67 PAN HKPPS5875Q filed with form 16.",
+      "entities": [
+        {
+          "type": "IN_PAN",
+          "start": 10,
+          "end": 20,
+          "utf16Start": 13,
+          "utf16End": 23,
+          "maskedValue": "*******75Q",
+          "valueHash": "cec8c32b",
+          "confidence": 1.0
+        }
+      ]
+    },
+    {
+      "id": "unicode.astral-emoji-between-two-identifiers",
+      "text": "UHID 0024518 \ud83d\udcce Aadhaar 7534 7930 7460 \ud83e\uddea sample no LAB2024991.",
+      "entities": [
+        {
+          "type": "MRN",
+          "start": 5,
+          "end": 12,
+          "utf16Start": 5,
+          "utf16End": 12,
+          "maskedValue": "*****18",
+          "valueHash": "82fdfcfb",
+          "confidence": 0.85
+        },
+        {
+          "type": "IN_AADHAAR",
+          "start": 23,
+          "end": 37,
+          "utf16Start": 24,
+          "utf16End": 38,
+          "maskedValue": "**********7460",
+          "valueHash": "824e2e58",
+          "confidence": 1.0
+        },
+        {
+          "type": "LAB_ACCESSION",
+          "start": 50,
+          "end": 60,
+          "utf16Start": 52,
+          "utf16End": 62,
+          "maskedValue": "*******991",
+          "valueHash": "7d7269bd",
+          "confidence": 0.8
         }
       ]
     }

@@ -7,6 +7,7 @@ import { navGroupsFor } from "../lib/roles";
 import { usePlatformAccess } from "../lib/platform-access";
 import { useTheme, type ThemePreference } from "../lib/theme";
 import { errorMessage } from "../lib/errors";
+import { useDialogFocus } from "../lib/use-dialog-focus";
 import ErrorBoundary from "./ErrorBoundary";
 import BladeWordmark from "./BladeWordmark";
 import MfaChallengeForm from "./MfaChallengeForm";
@@ -73,6 +74,8 @@ export default function Layout() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [navOpen]);
+
+  const challengeDialogRef = useDialogFocus<HTMLDivElement>(challenge !== null);
 
   useEffect(() => {
     if (!challenge) return;
@@ -265,6 +268,7 @@ export default function Layout() {
       {challenge ? (
         <div className="dialog-scrim" role="presentation">
           <div
+            ref={challengeDialogRef}
             className="dialog"
             role="dialog"
             aria-modal="true"

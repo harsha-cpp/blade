@@ -12,11 +12,11 @@ export type SendShortcutOutcome =
   | { kind: "no-send-control" }
   | { kind: "scan"; trigger: SendTrigger };
 
+export type ComposeButtonOutcome = SendShortcutOutcome;
+
 const ACTIONABLE_SELECTOR =
   '[role="button"],[role="menuitem"],button,[data-tooltip]';
 const BUTTON_SELECTOR = '[role="button"],button';
-
-const SCHEDULE_NAVIGATION = /(pick date|previous|next|month|year)/;
 
 const MAX_GROUP_DEPTH = 3;
 const MAX_GROUP_ACTIONS = 4;
@@ -30,6 +30,9 @@ const SEND_LABELS = collect((set) => set.send);
 const SCHEDULE_LABELS = collect((set) => set.scheduleSend);
 const NON_COMMIT_LABELS = collect((set) => set.nonCommit);
 const MORE_OPTIONS_LABELS = collect((set) => set.moreOptions);
+const SCHEDULE_NAVIGATION_LABELS = collect((set) => set.scheduleNavigation);
+
+const DATE_PICKER_SELECTOR = '[role="grid"],[role="listbox"]';
 
 export function triggerLabel(el: Element): string {
   const aria = el.getAttribute("aria-label");
@@ -97,11 +100,12 @@ export function classifyScheduleDialogAction(
   const dialog = el.closest('[role="dialog"],[role="alertdialog"]');
   if (!dialog) return null;
   if (!matchesLabel(dialogName(dialog), SCHEDULE_LABELS)) return null;
+  if (el.closest(DATE_PICKER_SELECTOR)) return null;
 
   const label = triggerLabel(el);
   if (!label) return null;
   if (matchesLabel(label, NON_COMMIT_LABELS)) return null;
-  if (SCHEDULE_NAVIGATION.test(label)) return null;
+  if (matchesLabel(label, SCHEDULE_NAVIGATION_LABELS)) return null;
   return "schedule-confirm";
 }
 
@@ -166,6 +170,10 @@ function sendGroupOf(el: HTMLElement): Element | null {
     group = group.parentElement;
   }
   return null;
+}
+
+export function sendControlGroup(el: HTMLElement): Element {
+  return sendGroupOf(el) ?? el;
 }
 
 function isBelowComposeBody(el: Element, compose: Element): boolean {
@@ -243,6 +251,16 @@ export function findSendControlTrigger(
   if (!control) return null;
   if (control !== target && !control.contains(target)) return null;
   return { kind: "send", element: control };
+}
+
+export function resolveComposeButtonActivation(
+  compose: Element,
+  target: Element | null,
+): ComposeButtonOutcome {
+  if (!target?.closest(BUTTON_SELECTOR)) return { kind: "ignore" };
+  if (!findSendControl(compose)) return { kind: "no-send-control" };
+  const trigger = findSendControlTrigger(compose, target);
+  return trigger ? { kind: "scan", trigger } : { kind: "ignore" };
 }
 
 export function resolveSendShortcut(

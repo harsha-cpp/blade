@@ -8,6 +8,7 @@ import {
   ORDER_STEP,
   removeRule,
   renumber,
+  reseedDraft,
   seedDraft,
   stripDraftKeys,
   toPolicySetIn,
@@ -208,6 +209,13 @@ describe("validateRules", () => {
       problems.some((p) => p.includes("every send would be allowed")),
     ).toBe(true);
   });
+
+  it("says an id is missing once, however many rules are missing one", () => {
+    const problems = validateRules([rule(""), rule(""), rule("")]);
+    expect(
+      problems.filter((p) => p === "Every rule needs an id."),
+    ).toHaveLength(1);
+  });
 });
 
 describe("isDirty", () => {
@@ -272,11 +280,13 @@ describe("describeConditions", () => {
   it("renders both sides of a risk window", () => {
     expect(
       describeConditions({ min_risk_score: 30, max_risk_score: 70 }),
-    ).toEqual(["risk ≥ 30", "risk ≤ 70"]);
+    ).toEqual(["risk at least 30", "risk at most 70"]);
   });
 
   it("keeps a zero threshold instead of dropping it as falsy", () => {
-    expect(describeConditions({ max_risk_score: 0 })).toEqual(["risk ≤ 0"]);
+    expect(describeConditions({ max_risk_score: 0 })).toEqual([
+      "risk at most 0",
+    ]);
   });
 
   it("describes both attachment states", () => {
@@ -315,5 +325,42 @@ describe("versionForSave", () => {
 
   it("has an answer before the saved set has loaded", () => {
     expect(versionForSave(undefined)).toBe("custom");
+  });
+});
+
+describe("reseedDraft", () => {
+  it("keeps the key of a rule that survived the save, so its editor stays open", () => {
+    const previous = seedDraft(three);
+    const openKey = previous[1]?.key;
+
+    const reseeded = reseedDraft(previous, three);
+
+    expect(reseeded[1]?.key).toBe(openKey);
+  });
+
+  it("mints a key for a rule the server added", () => {
+    const previous = seedDraft(three);
+    const keys = new Set(previous.map((r) => r.key));
+
+    const reseeded = reseedDraft(previous, [...three, rule("new-from-server")]);
+
+    expect(keys.has(reseeded[3]?.key ?? "")).toBe(false);
+    expect(new Set(reseeded.map((r) => r.key)).size).toBe(4);
+  });
+
+  it("never hands the same key to two rules that share an id", () => {
+    const previous = seedDraft([rule("dupe")]);
+
+    const reseeded = reseedDraft(previous, [rule("dupe"), rule("dupe")]);
+
+    expect(new Set(reseeded.map((r) => r.key)).size).toBe(2);
+  });
+
+  it("renumbers the adopted rules the same way a fresh seed does", () => {
+    const previous = seedDraft(three);
+
+    expect(reseedDraft(previous, three).map((r) => r.order)).toEqual(
+      seedDraft(three).map((r) => r.order),
+    );
   });
 });

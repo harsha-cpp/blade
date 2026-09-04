@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -10,9 +10,11 @@ import {
   ACCESS_REQUEST_STATUSES,
   sizeLabel,
   type AccessRequest,
+  type AccessRequestPatch,
   type AccessRequestStatus,
 } from "../api/access-requests";
 import { usePlatformAccess } from "../lib/platform-access";
+import { useDialogFocus } from "../lib/use-dialog-focus";
 import { formatTime } from "../lib/format";
 import { errorMessage } from "../lib/errors";
 import PageHeader from "../components/PageHeader";
@@ -57,15 +59,8 @@ export default function AccessRequestsRoute() {
   const open = items.find((item) => item.id === openId) ?? null;
 
   const save = useMutation({
-    mutationFn: (input: {
-      id: string;
-      status: AccessRequestStatus;
-      notes: string;
-    }) =>
-      accessRequestsApi.update(input.id, {
-        status: input.status,
-        notes: input.notes,
-      }),
+    mutationFn: (input: { id: string; patch: AccessRequestPatch }) =>
+      accessRequestsApi.update(input.id, input.patch),
     onSuccess: async () => {
       setOpenId(null);
       await queryClient.invalidateQueries({ queryKey: ["access-requests"] });
@@ -210,8 +205,10 @@ export default function AccessRequestsRoute() {
               : null
           }
           onClose={() => setOpenId(null)}
-          onSave={(status_, notes) =>
-            save.mutate({ id: open.id, status: status_, notes })
+          onSave={(patch) =>
+            Object.keys(patch).length > 0
+              ? save.mutate({ id: open.id, patch })
+              : setOpenId(null)
           }
         />
       ) : null}
@@ -230,14 +227,31 @@ function DetailDialog({
   saving: boolean;
   error: string | null;
   onClose: () => void;
-  onSave: (status: AccessRequestStatus, notes: string) => void;
+  onSave: (patch: AccessRequestPatch) => void;
 }) {
   const [status, setStatus] = useState<AccessRequestStatus>(item.status);
   const [notes, setNotes] = useState(item.notes ?? "");
+  const dialogRef = useDialogFocus<HTMLDivElement>(true);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  function patchFromEdits(): AccessRequestPatch {
+    const patch: AccessRequestPatch = {};
+    if (status !== item.status) patch.status = status;
+    if (notes !== (item.notes ?? "")) patch.notes = notes;
+    return patch;
+  }
 
   return (
     <div className="dialog-scrim" role="presentation">
       <div
+        ref={dialogRef}
         className="dialog"
         role="dialog"
         aria-modal="true"
@@ -325,7 +339,7 @@ function DetailDialog({
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => onSave(status, notes)}
+            onClick={() => onSave(patchFromEdits())}
             disabled={saving}
           >
             {saving ? "Saving..." : "Save"}

@@ -1,4 +1,5 @@
 import { StrictMode, useEffect, useState, useCallback } from "react";
+import { isConfigFresh } from "../config-freshness";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import {
@@ -45,7 +46,7 @@ function Popup() {
         setSavedCode(code || null);
         const config = result.blade_config as CachedConfig | undefined;
         setOrgName(config?.organization_name ?? null);
-        setHasConfig(Boolean(config));
+        setHasConfig(isConfigFresh(config?.fetched_at));
         setSavedToken(
           (result[DEVICE_TOKEN_STORAGE_KEY] as string | undefined) ?? null,
         );
@@ -68,7 +69,7 @@ function Popup() {
       if (changes.blade_config) {
         const cfg = changes.blade_config.newValue as CachedConfig | undefined;
         setOrgName(cfg?.organization_name ?? null);
-        setHasConfig(Boolean(cfg));
+        setHasConfig(isConfigFresh(cfg?.fetched_at));
       }
       if (changes.blade_org_code) {
         setSavedCode(

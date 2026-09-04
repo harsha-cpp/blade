@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import { crx } from "@crxjs/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { buildManifest } from "./manifest.config";
+import { hardenDist } from "./build-hardening";
 import { resolveBackendTarget } from "./src/backend-url";
 
 export default defineConfig(({ mode }) => {
@@ -13,13 +14,13 @@ export default defineConfig(({ mode }) => {
   );
 
   return {
-    plugins: [react(), crx({ manifest: buildManifest(backend) })],
+    plugins: [react(), crx({ manifest: buildManifest(backend) }), hardenDist()],
     define: {
       "import.meta.env.VITE_BACKEND_URL": JSON.stringify(backend.url),
     },
     build: {
       target: "chrome120",
-      sourcemap: "hidden",
+      sourcemap: mode === "production" ? false : "hidden",
       rollupOptions: {
         output: {
           manualChunks: {

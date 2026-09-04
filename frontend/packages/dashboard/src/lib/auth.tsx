@@ -24,6 +24,7 @@ import {
 import { setAccessToken, setOnAuthLost, refreshSession } from "./api";
 import { can, type Capability } from "./roles";
 import { clearShellRole, readShellRole, writeShellRole } from "./shell-cache";
+import { clearPlatformAccessProbes } from "./platform-access";
 
 interface AuthState {
   status: "loading" | "restoring" | "unauthenticated" | "authenticated";
@@ -130,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await authApi.logout().catch(() => undefined);
     setAccessToken(null);
     queryClient.clear();
+    clearPlatformAccessProbes();
     clearShellRole();
     setState({ status: "unauthenticated", member: null, organization: null });
   }, [queryClient]);
@@ -146,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const switchOrg = useCallback(
     async (orgId: string): Promise<MfaChallenge | null> => {
+      clearPlatformAccessProbes();
       const res: SwitchOrgResult = await authApi.switchOrg(orgId);
       if (isMfaChallenge(res)) return res;
       queryClient.clear();

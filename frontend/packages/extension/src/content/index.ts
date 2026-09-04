@@ -1,14 +1,25 @@
 import { mountWarningModal } from "../modal/mount";
-import type { AttachmentUploadResult, Verdict } from "@bladedlp/shared";
+import {
+  attachmentUploadResultSchema,
+  type AttachmentUploadResult,
+  type Verdict,
+} from "@bladedlp/shared";
 import { detectPhi, type PhiHit } from "./phi";
 import { fetchAttachmentRefs, scanAttachments } from "./attachments";
 import {
+  ComposeReadError,
   extractComposeData,
   fileKey,
   scanUntilStable,
   type ComposeData,
 } from "./compose";
 import { freezeCompose } from "./compose-freeze";
+import {
+  BLADE_SURFACE_ATTRIBUTE,
+  boundComposeStillOwns,
+  COMPOSE_NOTICE_SURFACE,
+  scopedSurfaceId,
+} from "./compose-scope";
 import { claimInjection, GMAIL_GUARD_MARKER } from "./injection-marker";
 import { parseVerdict } from "./verdict";
 import {
@@ -31,15 +42,17 @@ import {
 } from "./policy";
 import {
   findSendControl,
-  findSendControlTrigger,
   findSendTrigger,
   isActivationKey,
   isSendShortcut,
   isTextEntryTarget,
+  resolveComposeButtonActivation,
   resolveSendShortcut,
+  sendControlGroup,
   type SendTrigger,
   type SendTriggerKind,
 } from "./send-paths";
+import { isConfigFresh } from "../config-freshness";
 import {
   ATTACHMENT_FETCH_TIMEOUT_MS,
   ATTACHMENT_POLL_INTERVAL_MS,
@@ -52,6 +65,7 @@ import {
 } from "../config";
 import {
   backendFailureStep,
+  backendFailureSummary,
   BackendRequestError,
   isAttachmentRejected,
   retryDelayMs,
@@ -62,6 +76,7 @@ import {
   ATTACHMENT_INLINE_MAX_BYTES,
   BACKEND_REQUEST_MESSAGE,
   encodeBase64,
+  EVENT_MAX_ENTITIES,
 } from "../messages";
 
 let orgCode: string | null = null;
@@ -76,6 +91,7 @@ interface CachedConfig {
   domains?: CachedDomain[];
   blocked_domains?: CachedDomain[];
   fail_open?: boolean;
+  fetched_at?: number;
 }
 
 function buildPolicy(
@@ -84,6 +100,7 @@ function buildPolicy(
 ): OrgPolicy {
   const next = emptyPolicy();
   if (!config) return next;
+  if (!isConfigFresh(config.fetched_at)) return next;
   if (code && config.org_code && config.org_code.trim().toUpperCase() !== code)
     return next;
 
@@ -173,11 +190,10 @@ function showOrgCodeBanner(): void {
   brand.append(word);
   const skip = styled(
     "button",
-    `background:transparent;border:none;color:${p.ink3};font-size:18px;cursor:pointer;line-height:1;padding:0 4px;font-family:inherit;`,
+    `background:transparent;border:none;color:${p.ink3};font-size:12px;cursor:pointer;line-height:1;padding:2px 4px;font-family:inherit;`,
   );
   skip.type = "button";
-  skip.setAttribute("aria-label", "Dismiss");
-  skip.textContent = "×";
+  skip.textContent = "Dismiss";
   header.append(brand, skip);
 
   const description = styled("div", `color:${p.ink2};`);
@@ -268,12 +284,11 @@ function reportEvent(
     action: verdict.action,
     severity: verdict.severity,
     riskScore: verdict.risk_score,
-    entities: verdict.entities.map((e) => ({
+    entities: verdict.entities.slice(0, EVENT_MAX_ENTITIES).map((e) => ({
       type: e.type,
       confidence: e.confidence,
     })),
     recipients,
-    timestamp: verdict.created_at,
   });
 }
 
@@ -287,6 +302,18 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+function parseAttachmentResult(body: unknown): AttachmentUploadResult {
+  const parsed = attachmentUploadResultSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new BackendRequestError(
+      "http",
+      undefined,
+      "the server sent an attachment result Blade could not read",
+    );
+  }
+  return parsed.data;
+}
+
 async function uploadAttachmentForBackend(
   clientScanId: string,
   file: File,
@@ -294,7 +321,7 @@ async function uploadAttachmentForBackend(
 ): Promise<AttachmentUploadResult | null> {
   const dataBase64 = encodeBase64(new Uint8Array(await file.arrayBuffer()));
   try {
-    return await sendBackendRequest<AttachmentUploadResult>(
+    const body = await sendBackendRequest<unknown>(
       {
         type: BACKEND_REQUEST_MESSAGE,
         kind: "attachment-upload",
@@ -307,6 +334,7 @@ async function uploadAttachmentForBackend(
       },
       signal,
     );
+    return parseAttachmentResult(body);
   } catch (err) {
     if (isAttachmentRejected(err)) return null;
     throw err;
@@ -322,14 +350,16 @@ async function pollAttachmentScan(
   while (Date.now() < deadline && !signal.aborted) {
     let waitMs = ATTACHMENT_POLL_INTERVAL_MS;
     try {
-      latest = await sendBackendRequest<AttachmentUploadResult>(
-        {
-          type: BACKEND_REQUEST_MESSAGE,
-          kind: "attachment-status",
-          timeoutMs: ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
-          attachmentScanId,
-        },
-        signal,
+      latest = parseAttachmentResult(
+        await sendBackendRequest<unknown>(
+          {
+            type: BACKEND_REQUEST_MESSAGE,
+            kind: "attachment-status",
+            timeoutMs: ATTACHMENT_POLL_REQUEST_TIMEOUT_MS,
+            attachmentScanId,
+          },
+          signal,
+        ),
       );
       if (latest.status !== "queued") return latest;
     } catch (err) {
@@ -544,6 +574,7 @@ function allowSend(trigger: SendTrigger, compose: Element): void {
 
   if (!element) {
     console.warn("[Blade] cleared control is gone; click again to send");
+    showComposeNotice(compose, SEND_CONTROL_MOVED_NOTICE_TEXT);
     return;
   }
 
@@ -600,7 +631,10 @@ async function inspectDraft(
   } catch (err) {
     if (isCancelled()) throw err;
     reportContextLoss(err);
-    console.warn("[Blade] backend scan unavailable, deciding locally", err);
+    console.warn(
+      "[Blade] backend scan unavailable, deciding locally:",
+      backendFailureSummary(err),
+    );
     progress.setStep(backendFailureStep(err));
     const verdict = await buildLocalFallbackVerdict(
       data,
@@ -617,7 +651,19 @@ function sendVerified(
   trigger: SendTrigger,
   fingerprint: string,
 ): void {
-  if (readCompose(compose).fingerprint === fingerprint) {
+  let current: ComposeData;
+  try {
+    current = readCompose(compose);
+  } catch (err) {
+    console.error(
+      "[Blade] the draft could not be reread; nothing was sent",
+      err,
+    );
+    showComposeNotice(compose, scanFailureNoticeText(err));
+    return;
+  }
+
+  if (current.fingerprint === fingerprint) {
     allowSend(trigger, compose);
     return;
   }
@@ -653,7 +699,10 @@ async function handleSendIntercept(
     cancelled = true;
     controller.abort();
   });
-  const unfreeze = freezeCompose(compose);
+  const unfreeze = freezeCompose(
+    compose,
+    trigger.element.isConnected ? sendControlGroup(trigger.element) : null,
+  );
   const budget = setTimeout(() => controller.abort(), SCAN_BUDGET_MS);
 
   let settled: { data: ComposeData; verdict: Verdict } | null = null;
@@ -706,7 +755,6 @@ async function handleSendIntercept(
   );
 }
 
-const COMPOSE_NOTICE_ID = "blade-compose-notice";
 const COMPOSE_NOTICE_MS = 10000;
 const SEND_CONTROL_NOTICE_TEXT =
   "Blade could not find the send button in this compose window. Reload Gmail or switch the display language to English.";
@@ -714,16 +762,24 @@ const DRAFT_CHANGED_NOTICE_TEXT =
   "The draft changed after Blade checked it, so it was not sent. Blade is checking it again.";
 const DRAFT_UNSTABLE_NOTICE_TEXT =
   "The draft kept changing while Blade was checking it, so nothing was sent. Wait a moment and send again.";
+const DRAFT_UNREADABLE_NOTICE_TEXT =
+  "Blade could not read this draft, so it was not sent. Reload Gmail and try again.";
+const SCAN_FAILED_NOTICE_TEXT =
+  "Blade could not finish checking this message, so nothing was sent. Try again.";
+const SEND_CONTROL_MOVED_NOTICE_TEXT =
+  "The send button moved. Click send again.";
 
 function showComposeNotice(compose: Element, text: string): void {
-  document.getElementById(COMPOSE_NOTICE_ID)?.remove();
+  const noticeId = scopedSurfaceId(COMPOSE_NOTICE_SURFACE, compose);
+  document.getElementById(noticeId)?.remove();
   const p = palette();
 
   const notice = styled(
     "div",
     `position:fixed;z-index:2147483645;box-sizing:border-box;display:flex;align-items:flex-start;gap:10px;max-width:420px;padding:10px 12px;background:${p.surface};color:${p.ink};border:1px solid ${p.rule};border-left:3px solid ${p.stop};border-radius:6px;font-family:${FONT_UI};font-size:12.5px;line-height:1.45;box-shadow:${p.shadow};`,
   );
-  notice.id = COMPOSE_NOTICE_ID;
+  notice.id = noticeId;
+  notice.setAttribute(BLADE_SURFACE_ATTRIBUTE, COMPOSE_NOTICE_SURFACE);
   notice.setAttribute("role", "alert");
 
   const message = styled("span", "flex:1;min-width:0;");
@@ -755,7 +811,14 @@ function showSendControlNotice(compose: Element): void {
 function startSendIntercept(compose: Element, trigger: SendTrigger): void {
   void handleSendIntercept(compose, trigger).catch((err: unknown) => {
     console.error("[Blade] send interception failed; nothing was sent", err);
+    showComposeNotice(compose, scanFailureNoticeText(err));
   });
+}
+
+function scanFailureNoticeText(err: unknown): string {
+  return err instanceof ComposeReadError
+    ? DRAFT_UNREADABLE_NOTICE_TEXT
+    : SCAN_FAILED_NOTICE_TEXT;
 }
 
 function instrumentCompose(compose: Element): void {
@@ -807,36 +870,51 @@ function instrumentCompose(compose: Element): void {
   );
 }
 
-interface ComposeSend {
-  trigger: SendTrigger;
-  compose: Element;
-}
+type ComposeActivation =
+  | { kind: "ignore" }
+  | { kind: "no-send-control"; compose: Element }
+  | { kind: "scan"; compose: Element; trigger: SendTrigger };
 
-function resolveComposeSend(target: Element | null): ComposeSend | null {
+function resolveComposeActivation(target: Element | null): ComposeActivation {
   const labelled = findSendTrigger(target);
   if (labelled) {
     const compose = resolveComposeForTrigger(labelled.kind, labelled.element);
-    return compose ? { trigger: labelled, compose } : null;
+    return compose
+      ? { kind: "scan", compose, trigger: labelled }
+      : { kind: "ignore" };
   }
-  if (!target?.closest('[role="button"],button')) return null;
+
   const compose = findComposeAncestor(target);
-  if (!compose) return null;
-  const structural = findSendControlTrigger(compose, target);
-  return structural ? { trigger: structural, compose } : null;
+  if (!compose) return { kind: "ignore" };
+
+  const outcome = resolveComposeButtonActivation(compose, target);
+  if (outcome.kind === "ignore") return { kind: "ignore" };
+  if (outcome.kind === "no-send-control")
+    return { kind: "no-send-control", compose };
+  return { kind: "scan", compose, trigger: outcome.trigger };
+}
+
+function blockUntrustedCompose(compose: Element): void {
+  console.warn("[Blade] no send control found in this compose; not sent");
+  showSendControlNotice(compose);
 }
 
 function onDocumentClick(event: MouseEvent): void {
   if (bypassing) return;
   const target = event.target instanceof Element ? event.target : null;
-  const send = resolveComposeSend(target);
-  if (!send) return;
+  const activation = resolveComposeActivation(target);
+  if (activation.kind === "ignore") return;
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
-  startSendIntercept(send.compose, send.trigger);
+  if (activation.kind === "no-send-control") {
+    blockUntrustedCompose(activation.compose);
+    return;
+  }
+  startSendIntercept(activation.compose, activation.trigger);
 }
 
-let swallowedKey: string | null = null;
+const swallowedKeys = new WeakMap<Element, string>();
 
 function onDocumentKeyDown(event: KeyboardEvent): void {
   if (bypassing) return;
@@ -853,26 +931,42 @@ function onDocumentKeyDown(event: KeyboardEvent): void {
       startSendIntercept(compose, outcome.trigger);
       return;
     }
-    console.warn("[Blade] no send control found in this compose; not sent");
-    showSendControlNotice(compose);
+    blockUntrustedCompose(compose);
     return;
   }
 
   if (!isActivationKey(event) || isTextEntryTarget(target)) return;
-  const send = resolveComposeSend(target);
-  if (!send) return;
+  const activation = resolveComposeActivation(target);
+  if (activation.kind === "ignore") return;
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
-  swallowedKey = event.key;
-  startSendIntercept(send.compose, send.trigger);
+  swallowedKeys.set(activation.compose, event.key);
+  if (activation.kind === "no-send-control") {
+    blockUntrustedCompose(activation.compose);
+    return;
+  }
+  startSendIntercept(activation.compose, activation.trigger);
 }
 
 function onDocumentKeyUp(event: KeyboardEvent): void {
-  if (swallowedKey === null || event.key !== swallowedKey) return;
-  swallowedKey = null;
+  const target = event.target instanceof Element ? event.target : null;
+  const compose = findComposeAncestor(target);
+  if (!compose) return;
+  if (swallowedKeys.get(compose) !== event.key) return;
+  swallowedKeys.delete(compose);
   event.stopPropagation();
   event.stopImmediatePropagation();
+}
+
+function composeForFileInput(input: HTMLInputElement): Element | null {
+  const bound = fileInputCompose.get(input);
+  if (bound?.isConnected && boundComposeStillOwns(bound, input, activeCompose))
+    return bound;
+
+  const resolved = resolveComposeFromContext(input);
+  if (resolved) fileInputCompose.set(input, resolved);
+  return resolved;
 }
 
 function onDocumentChange(event: Event): void {
@@ -885,8 +979,7 @@ function onDocumentChange(event: Event): void {
   );
   if (!input?.files?.length) return;
 
-  const bound = fileInputCompose.get(input);
-  const compose = bound?.isConnected ? bound : resolveComposeFromContext(input);
+  const compose = composeForFileInput(input);
   if (!compose) {
     console.warn("[Blade] file picked with no compose to attribute it to");
     return;
@@ -910,10 +1003,7 @@ const fileInputObserver = new MutationObserver((mutations) => {
         if (owner) fileInputCompose.set(input, owner);
         input.addEventListener("change", () => {
           if (!input.files?.length) return;
-          const bound = fileInputCompose.get(input);
-          const compose = bound?.isConnected
-            ? bound
-            : resolveComposeFromContext(input);
+          const compose = composeForFileInput(input);
           if (!compose) return;
           captureFiles(compose, input.files);
         });

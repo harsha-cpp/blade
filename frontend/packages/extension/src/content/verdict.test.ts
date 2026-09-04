@@ -31,10 +31,10 @@ describe("verdicts coming back from the backend", () => {
     ["entities that are not a list", { ...wellFormed, entities: "none" }],
     ["a risk score sent as text", { ...wellFormed, risk_score: "90" }],
     [
-      "a recipient that is not an address",
+      "a recipient with an empty address",
       {
         ...wellFormed,
-        recipients: [{ email: "nope", classification: "internal" }],
+        recipients: [{ email: "", classification: "internal" }],
       },
     ],
     ["nothing at all", null],

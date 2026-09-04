@@ -485,3 +485,24 @@ def test_html_entities_are_decoded() -> None:
     assert "&nbsp;" not in to_text(markup)
     assert "&amp;" not in to_text(markup)
     assert "0024518" in to_text(markup)
+
+
+def test_a_soft_hyphen_from_html_does_not_split_an_identifier() -> None:
+    markup = "<p>Aadhaar 7534 79&shy;30 7460 issued.</p>"
+    text = to_text(markup)
+    assert "\u00ad" in text
+    result = detect_email(EmailPayload(body=text))
+    assert "IN_AADHAAR" in {entity.type for entity in result.entities}
+
+
+def test_html_comment_text_is_extracted() -> None:
+    markup = "<p>Summary</p><!-- UHID 0024518 for the patient -->"
+    text = to_text(markup)
+    assert "0024518" in text
+    result = detect_email(EmailPayload(body=text))
+    assert "MRN" in {entity.type for entity in result.entities}
+
+
+def test_a_comment_inside_a_skipped_element_is_not_extracted() -> None:
+    markup = "<script><!-- UHID 0024518 for the patient --></script><p>Summary</p>"
+    assert "0024518" not in to_text(markup)

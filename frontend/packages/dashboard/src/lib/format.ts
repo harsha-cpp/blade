@@ -70,7 +70,9 @@ export function toCsv(
 ): string {
   const cell = (v: string | number | null | undefined): string => {
     const raw = v === null || v === undefined ? "" : String(v);
-    const s = SPREADSHEET_FORMULA_START.test(raw) ? `'${raw}` : raw;
+    const needsGuard =
+      typeof v !== "number" && SPREADSHEET_FORMULA_START.test(raw);
+    const s = needsGuard ? `'${raw}` : raw;
     return `"${s.replace(/"/g, '""')}"`;
   };
   const lines = [headers.map(cell).join(",")];

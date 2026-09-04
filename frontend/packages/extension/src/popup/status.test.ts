@@ -81,6 +81,39 @@ describe("popup protection status", () => {
     expect(status.description).toContain("enrol this install again");
   });
 
+  it("reports protection for a token only install with a cached policy", () => {
+    const status = protectionStatus(
+      input({
+        hasConfig: true,
+        deviceToken: TOKEN,
+        orgName: "Sunrise Hospital",
+      }),
+    );
+
+    expect(status.state).toBe("protected");
+    expect(status.label).toBe("Protection on");
+  });
+
+  it("never calls a token only install unlinked", () => {
+    const status = protectionStatus(input({ deviceToken: TOKEN }));
+
+    expect(status.state).toBe("unconfigured");
+    expect(status.label).toBe("Configuration unavailable");
+    expect(status.label).not.toBe("Not linked");
+  });
+
+  it("still reports a rejected token on a token only install", () => {
+    const status = protectionStatus(
+      input({
+        hasConfig: true,
+        deviceToken: TOKEN,
+        lastAuth: outcome("unauthorized"),
+      }),
+    );
+
+    expect(status.state).toBe("degraded");
+  });
+
   it("keeps protection on when the backend was merely unreachable", () => {
     const status = protectionStatus(
       input({

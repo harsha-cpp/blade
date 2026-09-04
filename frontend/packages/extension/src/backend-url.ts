@@ -1,5 +1,5 @@
 export const DEV_BACKEND_URL = "http://localhost:8000";
-export const PROD_BACKEND_URL = "https://api.bladedlp.io";
+export const PROD_BACKEND_URL = "https://api.tryblade.in";
 
 export interface BackendTarget {
   url: string;
@@ -12,7 +12,12 @@ export function resolveBackendTarget(
 ): BackendTarget {
   const candidate = (raw ?? "").trim();
   if (!candidate) {
-    return toTarget(new URL(isDev ? DEV_BACKEND_URL : PROD_BACKEND_URL));
+    if (!isDev) {
+      throw new Error(
+        `VITE_BACKEND_URL must be set for a production build, for example ${PROD_BACKEND_URL}`,
+      );
+    }
+    return toTarget(new URL(DEV_BACKEND_URL));
   }
 
   let parsed: URL;

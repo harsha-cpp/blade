@@ -6,6 +6,7 @@ import {
   BACKEND_REQUEST_MESSAGE,
   decodeBase64,
   encodeBase64,
+  EVENT_MAX_ENTITIES,
   parseBackendRequest,
   type BackendRequest,
 } from "../messages";
@@ -121,6 +122,62 @@ describe("request building", () => {
     expect(body).not.toHaveProperty("user_email");
     expect(body.org_code).toBe(ORG_CODE);
     expect(body.attachment_scan_ids).toEqual(["att-1"]);
+  });
+
+  it("lets the backend stamp the event when the page sent no timestamp", () => {
+    const request = { ...eventRequest() };
+    delete (request as { timestamp?: string }).timestamp;
+    const { init } = prepareBackendRequest(request, BY_ORG_CODE);
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+
+    expect(body).not.toHaveProperty("timestamp");
+  });
+
+  it("refuses a message carrying more entities than the backend accepts", () => {
+    const entity = { type: "MRN", confidence: 0.9 };
+    const tooMany = {
+      ...eventRequest(),
+      entities: Array.from({ length: EVENT_MAX_ENTITIES + 1 }, () => entity),
+    };
+    const atLimit = {
+      ...eventRequest(),
+      entities: Array.from({ length: EVENT_MAX_ENTITIES }, () => entity),
+    };
+
+    expect(parseBackendRequest(tooMany)).toBeNull();
+    expect(parseBackendRequest(atLimit)).not.toBeNull();
+  });
+
+  it("keeps the sender address out of an event sent by device token", () => {
+    const { init } = prepareBackendRequest(eventRequest(), BY_DEVICE);
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+
+    expect(body).not.toHaveProperty("user_email");
+    expect(body).not.toHaveProperty("org_code");
+    expect(body.client_event_id).toBe("scan-1");
+  });
+
+  it("keeps the sender address out of a finalize sent by device token", () => {
+    const request = {
+      ...finalizeRequest(),
+      userEmail: "nurse@hospital.example",
+    };
+    const { init } = prepareBackendRequest(request, BY_DEVICE);
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+
+    expect(body).not.toHaveProperty("user_email");
+    expect(body).not.toHaveProperty("org_code");
+  });
+
+  it("still sends the sender address on an org code install", () => {
+    const request = {
+      ...finalizeRequest(),
+      userEmail: "nurse@hospital.example",
+    };
+    const { init } = prepareBackendRequest(request, BY_ORG_CODE);
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+
+    expect(body.user_email).toBe("nurse@hospital.example");
   });
 
   it("rebuilds the upload form from the transferred bytes", async () => {

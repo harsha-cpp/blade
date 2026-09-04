@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
 INVALID_CURSOR_DETAIL = "invalid cursor"
+MAX_PAGE_SIZE = 200
+
+
+def empty_page_items[ItemT](item_type: type[ItemT]) -> Callable[[], list[ItemT]]:
+    del item_type
+
+    def factory() -> list[ItemT]:
+        return []
+
+    return factory
 
 
 def encode_cursor(created_at: datetime, identifier: UUID) -> str:

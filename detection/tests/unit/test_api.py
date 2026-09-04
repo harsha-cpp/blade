@@ -5,8 +5,8 @@ from pathlib import Path
 
 from docx import Document
 
-from blade_detection.api import detect_email
-from blade_detection.models import Attachment, EmailPayload
+from blade_detection.api import MAX_ENTITIES_PER_TYPE, detect_email, top_entities_per_type
+from blade_detection.models import Attachment, EmailPayload, Entity
 
 
 def test_detect_email_finds_abha() -> None:
@@ -87,3 +87,36 @@ def test_invalid_icd10_codes_are_dropped() -> None:
     )
 
     assert [entity for entity in result.entities if entity.type == "ICD10"] == []
+
+
+def test_stored_entities_are_capped_per_type_while_the_count_is_kept() -> None:
+    line = "UHID {index:07d} admitted for treatment.\n"
+    body = "".join(line.format(index=index) for index in range(MAX_ENTITIES_PER_TYPE + 40))
+
+    result = detect_email(EmailPayload(body=body))
+
+    stored = [entity for entity in result.entities if entity.type == "MRN"]
+    assert len(stored) == MAX_ENTITIES_PER_TYPE
+    assert result.entity_count >= MAX_ENTITIES_PER_TYPE + 40
+    assert result.entity_count > len(result.entities)
+    assert [entity.start for entity in stored] == sorted(entity.start or 0 for entity in stored)
+
+
+def test_a_small_scan_keeps_every_entity_and_reports_the_same_count() -> None:
+    result = detect_email(EmailPayload(body="UHID 0024518 and Aadhaar 7534 7930 7460."))
+
+    assert result.entity_count == len(result.entities)
+    assert result.entity_count > 0
+
+
+def test_top_entities_per_type_keeps_the_highest_confidence_hits() -> None:
+    entities = [
+        Entity(type="MRN", masked_value="*", confidence=0.6, source="body", start=0, end=1),
+        Entity(type="MRN", masked_value="*", confidence=0.9, source="body", start=2, end=3),
+        Entity(type="MRN", masked_value="*", confidence=0.7, source="body", start=4, end=5),
+        Entity(type="ICD10", masked_value="*", confidence=0.5, source="body", start=6, end=7),
+    ]
+
+    kept = top_entities_per_type(entities, 2)
+
+    assert [entity.start for entity in kept] == [2, 4, 6]

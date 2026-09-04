@@ -5,7 +5,12 @@ import {
   type QuarantinePage,
 } from "../api/quarantine";
 import { ApiError, setAccessToken } from "./api";
-import { ALREADY_DECIDED_MESSAGE, decisionErrorMessage } from "./quarantine";
+import {
+  ALREADY_DECIDED_MESSAGE,
+  EMPTY_DECISION_DRAFT,
+  decisionErrorMessage,
+  draftForItem,
+} from "./quarantine";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -106,5 +111,47 @@ describe("decisionErrorMessage", () => {
     expect(decisionErrorMessage(new Error(""))).toBe(
       "Could not record that decision.",
     );
+  });
+});
+
+describe("draftForItem", () => {
+  it("keeps the note while the same item stays selected", () => {
+    const typed = { itemId: "item-a", note: "Released for care", error: null };
+
+    expect(draftForItem(typed, "item-a")).toBe(typed);
+  });
+
+  it("drops a note typed for another item so it cannot be filed against this one", () => {
+    const typed = { itemId: "item-a", note: "Released for care", error: null };
+
+    expect(draftForItem(typed, "item-b")).toEqual({
+      itemId: "item-b",
+      note: "",
+      error: null,
+    });
+  });
+
+  it("drops a decision error left over from another item", () => {
+    const failed = {
+      itemId: "item-a",
+      note: "",
+      error: ALREADY_DECIDED_MESSAGE,
+    };
+
+    expect(draftForItem(failed, "item-b").error).toBeNull();
+  });
+
+  it("adopts the first selection made from an empty draft", () => {
+    expect(draftForItem(EMPTY_DECISION_DRAFT, "item-a")).toEqual({
+      itemId: "item-a",
+      note: "",
+      error: null,
+    });
+  });
+
+  it("clears the draft when the selection goes away", () => {
+    const typed = { itemId: "item-a", note: "Released for care", error: null };
+
+    expect(draftForItem(typed, null)).toEqual(EMPTY_DECISION_DRAFT);
   });
 });

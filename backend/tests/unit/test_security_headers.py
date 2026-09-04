@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from starlette.applications import Starlette
+from starlette.datastructures import MutableHeaders
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from blade_backend.main import create_app
-from blade_backend.observability.security import SecurityHeadersMiddleware, carries_credentials
+from blade_backend.observability.security import (
+    SecurityHeadersMiddleware,
+    carries_credentials,
+    deduplicate_vary,
+)
 from blade_backend.settings import Settings
 
 DASHBOARD_ORIGIN = "https://dashboard.example"
@@ -69,10 +75,13 @@ def test_interactive_docs_are_hidden_outside_development(app_env: str, docs_visi
     settings = Settings(
         app_env=app_env,
         refresh_cookie_secure=True,
-        jwt_secret="a-real-secret-that-is-long-enough",  # type: ignore[arg-type]
+        jwt_secret=SecretStr("a-real-secret-that-is-long-enough"),
         storage_backend="s3",
         mailer_backend="smtp",
-        audit_hmac_key="a-real-audit-key-that-is-long-enough",  # type: ignore[arg-type]
+        audit_hmac_key=SecretStr("a-real-audit-key-that-is-long-enough"),
+        allow_open_signup=False,
+        trusted_proxy_count=1,
+        cors_origins=[DASHBOARD_ORIGIN],
     )
 
     app = create_app(settings)
@@ -125,3 +134,45 @@ async def test_the_landing_origin_is_not_allowed_anywhere_else() -> None:
 
     assert "access-control-allow-origin" not in elsewhere.headers
     assert dashboard.headers["access-control-allow-origin"] == DASHBOARD_ORIGIN
+
+
+@pytest.mark.unit
+def test_repeated_vary_values_are_collapsed() -> None:
+    headers = MutableHeaders({"vary": "Origin, origin, Accept-Encoding, Origin"})
+
+    deduplicate_vary(headers)
+
+    assert headers["vary"] == "Origin, Accept-Encoding"
+
+
+@pytest.mark.unit
+async def test_a_landing_origin_on_the_dashboard_list_is_answered_only_once() -> None:
+    app = create_app(
+        Settings(
+            landing_origins=[LANDING_ORIGIN],
+            cors_origins=[LANDING_ORIGIN, DASHBOARD_ORIGIN],
+        )
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/public/signup-status", headers={"origin": LANDING_ORIGIN}
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == LANDING_ORIGIN
+    assert "access-control-allow-credentials" not in response.headers
+    assert response.headers["vary"] == "Origin"
+
+
+@pytest.mark.unit
+async def test_a_dashboard_origin_keeps_its_credentials_off_the_landing_paths() -> None:
+    transport = ASGITransport(app=_landing_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/public/signup-status", headers={"origin": DASHBOARD_ORIGIN}
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == DASHBOARD_ORIGIN
+    assert response.headers["access-control-allow-credentials"] == "true"

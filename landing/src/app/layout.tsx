@@ -39,7 +39,12 @@ const geistPixel = localFont({
 const description =
   "Blade is data loss prevention for hospitals. It inspects outgoing Gmail and any web text box, including ChatGPT, and stops patient identifiers before they leave the browser.";
 
+const siteUrl = (
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://tryblade.in"
+).replace(/\/+$/, "");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title,
   description,
   applicationName: title,
@@ -63,7 +68,12 @@ export default function RootLayout({
       lang="en"
       className={`${restartMedium.variable} ${restartRegular.variable} ${protoMono.variable} ${geistPixel.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

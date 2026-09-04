@@ -152,23 +152,56 @@ def test_junk_icd10_codes_are_still_rejected() -> None:
     assert validate_icd10("E11.ABCDE") is False
 
 
+def test_a_clinical_modification_subcode_is_validated_in_full() -> None:
+    assert validate_icd10("E11.9") is True
+    assert validate_icd10("S72.001A") is True
+    assert validate_icd10("E11.99") is False
+    assert validate_icd10("E11.9ZZZ") is False
+
+
+def test_who_supplement_categories_keep_the_category_only_check() -> None:
+    assert validate_icd10("I64") is True
+    assert validate_icd10("E14") is True
+    assert validate_icd10("E14.9") is True
+
+
 def test_who_only_codes_are_detected_in_clinical_prose() -> None:
     assert "ICD10" in _types("Stroke coded as I64 for the admitted patient.")
     assert "ICD10" in _types("Discharge diagnosis E14.9 recorded for the patient.")
     assert "ICD10" not in _types("Known issue E99.999 in the tracker is deferred to v2.15.")
 
 
-def test_a_checksum_valid_aadhaar_survives_commercial_vocabulary() -> None:
+def test_idbi_bank_ifsc_is_recognised() -> None:
+    assert "IN_IFSC" in _types("credit IBKL0001234")
+
+
+def test_a_checksum_valid_aadhaar_survives_a_weak_negative_term() -> None:
     assert "IN_AADHAAR" in _types("Sharing the number 7534 7930 7460 for your reference.")
-    assert "IN_AADHAAR" in _types("Transaction 7534 7930 7460 was logged against the invoice.")
 
 
-def test_checksum_backed_rules_cannot_be_vetoed_by_vocabulary_alone() -> None:
+def test_a_verhoeff_valid_commercial_number_is_not_read_as_an_aadhaar() -> None:
+    assert "IN_AADHAAR" not in _types("Invoice no 812806192057 raised against the purchase order")
+    assert "IN_AADHAAR" not in _types(
+        "Vendor transaction id 748233725236 was settled against the GST invoice."
+    )
+    assert "IN_AADHAAR" not in _types("Transaction 7534 7930 7460 was logged against the invoice.")
+
+
+def test_checksum_backed_rules_cannot_be_vetoed_by_weak_vocabulary_alone() -> None:
     for rule in BUILTIN_RULES:
-        if rule.validator not in CHECKSUM_VALIDATORS or not rule.negative_terms:
+        if rule.validator not in CHECKSUM_VALIDATORS or not rule.weak_negative_terms:
             continue
-        assert rule.base_confidence - rule.negative_penalty >= MIN_CONFIDENCE, (
-            f"{rule.name} can be vetoed by vocabulary despite a checksum validator"
+        assert rule.base_confidence - rule.weak_negative_penalty >= MIN_CONFIDENCE, (
+            f"{rule.name} can be vetoed by weak vocabulary despite a checksum validator"
+        )
+
+
+def test_a_strong_commercial_term_vetoes_a_checksum_backed_rule() -> None:
+    for rule in BUILTIN_RULES:
+        if rule.validator not in CHECKSUM_VALIDATORS or not rule.weak_negative_terms:
+            continue
+        assert rule.base_confidence - rule.negative_penalty < MIN_CONFIDENCE, (
+            f"{rule.name} still passes with a strong commercial term in the window"
         )
 
 
@@ -200,6 +233,24 @@ def test_identifier_boundaries_do_not_depend_on_the_surrounding_script() -> None
 
 def test_zero_width_characters_do_not_split_an_identifier() -> None:
     assert "IN_PAN" in _types(f"PAN HKP{ZERO_WIDTH_JOINER}PS5875Q filed with form 16.")
+
+
+INVISIBLE_SPLITTERS = (
+    "\u00ad",
+    "\u034f",
+    "\u180e",
+    "\u2060",
+    "\u2061",
+    "\u2064",
+    "\ufe00",
+    "\ufe0f",
+)
+
+
+@pytest.mark.parametrize("invisible", INVISIBLE_SPLITTERS)
+def test_every_folded_invisible_character_keeps_an_identifier_whole(invisible: str) -> None:
+    assert "IN_PAN" in _types(f"PAN HKP{invisible}PS5875Q filed with form 16.")
+    assert "IN_AADHAAR" in _types(f"Aadhaar 7534 79{invisible}30 7460 issued.")
 
 
 def test_offsets_and_masked_values_refer_to_the_original_text() -> None:

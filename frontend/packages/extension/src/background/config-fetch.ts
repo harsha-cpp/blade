@@ -44,8 +44,17 @@ export function orgCodeCredentialKey(orgCode: string): string {
   return `org:${orgCode}`;
 }
 
-export function deviceCredentialKey(token: string): string {
-  return `device:${token.slice(-12)}`;
+const DEVICE_KEY_HEX_CHARS = 16;
+
+export async function deviceCredentialKey(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(token),
+  );
+  const hex = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return `device:${hex.slice(0, DEVICE_KEY_HEX_CHARS)}`;
 }
 
 export async function fetchPublicConfigByOrgCode(
@@ -104,7 +113,7 @@ export async function fetchDeviceConfig(
         blocked_domains: data.config.blocked_domains ?? [],
         fail_open: data.config.fail_open === true,
         fetched_at: Date.now(),
-        credential_key: deviceCredentialKey(token),
+        credential_key: await deviceCredentialKey(token),
       },
     };
   } catch (err) {
