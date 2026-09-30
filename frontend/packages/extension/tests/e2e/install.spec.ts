@@ -280,6 +280,25 @@ test("production organization links in the published extension and survives Chro
     await expect(
       restored.getByRole("button", { name: "Link", exact: true }),
     ).toBeDisabled();
+    if (process.env["BLADE_E2E_SCAN"] === "1") {
+      const scan = await restored.evaluate(async () =>
+        chrome.runtime.sendMessage({
+          type: "BACKEND_REQUEST",
+          kind: "scan-finalize",
+          timeoutMs: 20_000,
+          clientScanId: crypto.randomUUID(),
+          subject: "Blade synthetic installation check",
+          body: "Synthetic test only. Patient MRN: 4471902.",
+          recipients: ["blade-smoke@example.net"],
+          userEmail: null,
+          attachmentScanIds: [],
+        }),
+      );
+      expect(scan.ok, JSON.stringify(scan)).toBe(true);
+      expect(scan.status).toBe(200);
+      expect(scan.body.entities.length).toBeGreaterThan(0);
+      expect(scan.body.action).not.toBe("allow");
+    }
     await restored.getByLabel("Organization code").fill("BLD-INVALID");
     await restored.getByRole("button", { name: "Link", exact: true }).click();
     await expect(restored.getByRole("alert")).toContainText("not found", {

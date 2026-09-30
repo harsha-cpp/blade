@@ -239,7 +239,7 @@ jobs:
 
           # The worker's task actually registers.
           docker run --rm --entrypoint python blade/worker:ci -c \
-            'from blade_backend.tasks.celery_app import celery_app as c; c.finalize(); assert "blade.scan.process_attachment" in c.tasks, sorted(c.tasks)'
+            'from blade_backend.tasks.celery_app import celery_app as c; c.loader.import_default_modules(); c.finalize(); assert "blade.scan.process_attachment" in c.tasks, sorted(c.tasks)'
 
           # The API answers /healthz.
           docker run -d --name api-smoke -p 8000:8000 blade/api:ci

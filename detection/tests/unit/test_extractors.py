@@ -29,7 +29,10 @@ PHI_LINE = "Patient Ramesh Kumar Iyer, UHID 0024518, diagnosis E11.9"
 def test_email_container_is_parsed_when_libmagic_reports_a_text_type(
     monkeypatch: pytest.MonkeyPatch, sniffed: str
 ) -> None:
-    monkeypatch.setattr("blade_detection.extractors._detect_mime", lambda *_: sniffed)
+    def detect_mime(_data: bytes, _fallback: str) -> str:
+        return sniffed
+
+    monkeypatch.setattr("blade_detection.extractors._detect_mime", detect_mime)
     message = EmailMessage()
     message.set_content("Plain part: UHID 0024518 for the patient.")
     message.add_alternative("<p>Rich part: UHID 0099887 for the patient.</p>", subtype="html")
