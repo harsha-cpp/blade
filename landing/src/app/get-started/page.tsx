@@ -33,9 +33,10 @@ const steps: Step[] = [
   {
     n: "02",
     title: "Install the Chrome extension",
-    body: "Install Blade from the Chrome Web Store link your rollout contact sends you, or from the build your IT team pushes to managed machines. There is nothing to compile and no developer mode to turn on.",
+    body: "Download the Blade ZIP, extract it, and open chrome://extensions in desktop Chrome. Turn on Developer mode, click Load unpacked, and select the extracted blade-extension folder containing manifest.json.",
     detail:
-      "Chrome 120 or newer, on the profile that sends the mail. On a managed machine the extension usually appears on its own at the next policy refresh. The Blade icon in the toolbar opens the popup, which is where the install gets linked.",
+      "Chrome 120 or newer, on the profile that sends the mail. Keep the extracted folder in place and pin Blade from the extensions menu. Managed machines may require your administrator to install it.",
+    action: { href: "/install", label: "Download and follow the installation guide" },
   },
   {
     n: "03",
@@ -67,7 +68,7 @@ const prerequisites: [string, string][] = [
   ],
   [
     "Chrome",
-    "Chrome 120 or newer, signed in to the profile that sends the mail. Nothing is built locally and no developer mode is needed.",
+    "Desktop Chrome 120 or newer, on the profile that sends the mail. Enable Developer mode to load the downloaded extension, or ask your administrator to install it.",
   ],
   [
     "A device token",

@@ -20,6 +20,11 @@ import {
   type ConfigCache,
 } from "./config-fetch";
 import { WEB_BLOCK_MESSAGE, type WebBlockReport } from "../web-block";
+import { LINK_ORG_MESSAGE } from "../org-link";
+import { linkOrganization } from "./link-org";
+import { isConfigFresh } from "../config-freshness";
+import { serializeCredentialTask } from "./credential-tasks";
+import { linkDevice } from "./link-device";
 
 const REFRESH_ALARM = "blade-config-refresh";
 
@@ -59,7 +64,14 @@ async function reportWebBlock(report: WebBlockReport): Promise<void> {
   }
 }
 
-async function refresh(): Promise<void> {
+let refreshGeneration = 0;
+
+function refresh(): Promise<void> {
+  return serializeCredentialTask(refreshNow);
+}
+
+async function refreshNow(): Promise<void> {
+  const generation = ++refreshGeneration;
   const credential = await resolveScanCredential();
   if (!credential) {
     await chrome.storage.local.remove("blade_config");
@@ -80,6 +92,13 @@ async function refresh(): Promise<void> {
     credential.kind === "device"
       ? await fetchDeviceConfig(credential.token, credential.orgCode)
       : await fetchPublicConfigByOrgCode(credential.orgCode);
+
+  const latest = await resolveScanCredential();
+  if (
+    generation !== refreshGeneration ||
+    JSON.stringify(latest) !== JSON.stringify(credential)
+  )
+    return;
 
   if (configResult.status === "ok") {
     await chrome.storage.local.set({ blade_config: configResult.config });
@@ -128,14 +147,28 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (isCredentialStorageChange(changes)) {
-    void refresh();
+    // Linking commits a verified config together with its credential.
+    const config = changes.blade_config?.newValue as ConfigCache | undefined;
+    if (!config || !isConfigFresh(config.fetched_at)) void refresh();
   }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false;
+  if (message?.type === "LINK_DEVICE" && typeof message.token === "string") {
+    if (sender.url !== chrome.runtime.getURL("src/popup/index.html"))
+      return false;
+    void linkDevice(message.token).then(sendResponse);
+    return true;
+  }
+  if (message?.type === LINK_ORG_MESSAGE && typeof message.code === "string") {
+    void linkOrganization(message.code).then(sendResponse);
+    return true;
+  }
   if (message?.type === "REFRESH_CONFIG") {
-    void refresh().then(() => sendResponse({ ok: true }));
+    void refresh()
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (message?.type === WEB_BLOCK_MESSAGE) {

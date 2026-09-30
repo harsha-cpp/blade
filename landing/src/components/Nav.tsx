@@ -2,6 +2,7 @@ import Link from "next/link";
 import { links as appLinks } from "@/lib/links";
 import Button from "./ui/Button";
 import PrimaryCta from "./ui/PrimaryCta";
+import DownloadExtension from "./DownloadExtension";
 
 export default function Nav() {
   return (
@@ -22,6 +23,7 @@ export default function Nav() {
         </Link>
 
         <div className="flex flex-1 items-center justify-end gap-2 tab:gap-3">
+          <DownloadExtension compact />
           <Button
             href={appLinks.signIn}
             variant="ghost"

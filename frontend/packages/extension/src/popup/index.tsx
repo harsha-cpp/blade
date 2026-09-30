@@ -1,7 +1,9 @@
-import { StrictMode, useEffect, useState, useCallback } from "react";
+import { StrictMode, useEffect, useState, useCallback, useRef } from "react";
 import { isConfigFresh } from "../config-freshness";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { requestOrgLink, normalizeOrgCode } from "../org-link";
+import type { DeviceLinkResult } from "../background/link-device";
 import {
   LAST_AUTH_OUTCOME_STORAGE_KEY,
   parseAuthOutcome,
@@ -36,6 +38,9 @@ function Popup() {
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [showTokenSaved, setShowTokenSaved] = useState(false);
   const [lastAuth, setLastAuth] = useState<AuthOutcome | null>(null);
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     chrome.storage.local.get(
@@ -87,38 +92,73 @@ function Popup() {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     const trimmed = orgCode.trim().toUpperCase();
-    if (trimmed.length < 4 || trimmed === savedCode) return;
-    chrome.storage.local.set({
-      blade_org_code: trimmed,
-      blade_org_skipped: false,
-    });
-    setSavedCode(trimmed);
-    setShowSaved(true);
-    setTimeout(() => setShowSaved(false), 2000);
-    chrome.runtime.sendMessage({ type: "REFRESH_CONFIG" }).catch(() => {});
-  }, [orgCode, savedCode]);
+    if (savingRef.current || (trimmed === savedCode && hasConfig)) return;
+    savingRef.current = true;
+    setSaving(true);
+    setOrgError(null);
+    setShowSaved(false);
+    try {
+      const result = await requestOrgLink(trimmed);
+      if (!result.ok) {
+        setOrgError(result.message);
+        return;
+      }
+      setOrgCodeInput(result.orgCode);
+      setSavedCode(result.orgCode);
+      setOrgName(result.organizationName);
+      setHasConfig(true);
+      setShowSaved(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }, [orgCode, savedCode, hasConfig]);
 
-  const handleSaveToken = useCallback(() => {
+  const handleSaveToken = useCallback(async () => {
+    if (savingRef.current) return;
     const checked = checkDeviceToken(tokenInput);
     if (!checked.ok) {
       setTokenError(checked.message);
       return;
     }
+    savingRef.current = true;
+    setSaving(true);
     setTokenError(null);
-    chrome.storage.local.set({ [DEVICE_TOKEN_STORAGE_KEY]: checked.token });
-    chrome.storage.session.remove(LAST_AUTH_OUTCOME_STORAGE_KEY);
-    setSavedToken(checked.token);
-    setLastAuth(null);
-    setTokenInput("");
-    setShowTokenSaved(true);
-    setTimeout(() => setShowTokenSaved(false), 2000);
+    setShowTokenSaved(false);
+    try {
+      const result: DeviceLinkResult = await chrome.runtime.sendMessage({
+        type: "LINK_DEVICE",
+        token: checked.token,
+      });
+      if (!result.ok) {
+        setTokenError(result.message);
+        return;
+      }
+      setOrgName(result.organizationName);
+      setHasConfig(true);
+      setSavedCode(null);
+      setOrgCodeInput("");
+      setSavedToken(checked.token);
+      setLastAuth(null);
+      setTokenInput("");
+      setShowTokenSaved(true);
+    } catch {
+      setTokenError("Blade could not save the device token. Please try again.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }, [tokenInput]);
 
-  const handleClearToken = useCallback(() => {
-    chrome.storage.local.remove(DEVICE_TOKEN_STORAGE_KEY);
-    chrome.storage.session.remove(LAST_AUTH_OUTCOME_STORAGE_KEY);
+  const handleClearToken = useCallback(async () => {
+    await chrome.storage.local.remove([
+      DEVICE_TOKEN_STORAGE_KEY,
+      "blade_config",
+    ]);
+    await chrome.storage.session.remove(LAST_AUTH_OUTCOME_STORAGE_KEY);
+    setHasConfig(false);
     setSavedToken(null);
     setLastAuth(null);
     setTokenInput("");
@@ -127,8 +167,8 @@ function Popup() {
   }, []);
 
   const hasChanges =
-    orgCode.trim().toUpperCase() !== (savedCode ?? "") &&
-    orgCode.trim().length >= 4;
+    (orgCode.trim().toUpperCase() !== (savedCode ?? "") || !hasConfig) &&
+    normalizeOrgCode(orgCode) !== null;
   const statusInput = {
     orgCode: savedCode,
     hasConfig,
@@ -180,19 +220,32 @@ function Popup() {
                 autoComplete="off"
                 spellCheck={false}
                 value={orgCode}
-                onChange={(e) => setOrgCodeInput(e.target.value)}
+                onChange={(e) => {
+                  setOrgCodeInput(e.target.value);
+                  setOrgError(null);
+                  setShowSaved(false);
+                }}
                 onKeyDown={(e) => e.key === "Enter" && handleSave()}
               />
               <button
                 type="button"
                 className="settings-btn"
                 onClick={handleSave}
-                disabled={!hasChanges}
+                disabled={!hasChanges || saving || Boolean(savedToken)}
               >
-                Link
+                {saving && !tokenInput ? "Checking…" : "Link"}
               </button>
             </div>
-            {showSaved && <div className="settings-saved">Linked.</div>}
+            {orgError && (
+              <div className="settings-error" role="alert">
+                {orgError}
+              </div>
+            )}
+            {showSaved && (
+              <div className="settings-saved" role="status">
+                Linked. Saved for this Chrome profile.
+              </div>
+            )}
             {orgName && savedCode && !showSaved && (
               <div className="settings-meta">
                 Linked to <span className="settings-meta-org">{orgName}</span>
@@ -227,7 +280,7 @@ function Popup() {
                 type="button"
                 className="settings-btn"
                 onClick={handleSaveToken}
-                disabled={tokenInput.trim().length === 0}
+                disabled={tokenInput.trim().length === 0 || saving}
               >
                 Save
               </button>
@@ -235,7 +288,7 @@ function Popup() {
                 type="button"
                 className="settings-btn is-quiet"
                 onClick={handleClearToken}
-                disabled={!savedToken}
+                disabled={!savedToken || saving}
               >
                 Clear
               </button>

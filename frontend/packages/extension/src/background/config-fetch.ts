@@ -1,27 +1,33 @@
 import { BACKEND_URL } from "../config";
 import { DEVICE_TOKEN_HEADER } from "../device-token";
+import { z } from "zod";
+
+const domainSchema = z.object({
+  domain: z.string().min(1),
+  direction: z.string(),
+  classification: z.string(),
+});
+const configSchema = z.object({
+  domains: z.array(domainSchema),
+  blocked_domains: z.array(domainSchema).optional(),
+  fail_open: z.boolean().optional(),
+});
+const publicConfigSchema = configSchema.extend({
+  organization: z.object({
+    name: z.string().min(1),
+    org_code: z.string().min(1),
+  }),
+});
+const deviceConfigSchema = z.object({
+  device: z.object({ id: z.string(), label: z.string() }),
+  organization: z.object({ name: z.string().min(1) }),
+  config: configSchema,
+});
 
 export interface PublicDomain {
   domain: string;
   direction: string;
   classification: string;
-}
-
-interface PublicConfig {
-  organization: { name: string; org_code: string };
-  domains: PublicDomain[];
-  blocked_domains?: PublicDomain[];
-  fail_open?: boolean;
-}
-
-interface DeviceSelfConfig {
-  device: { id: string; label: string };
-  organization: { name: string };
-  config: {
-    fail_open?: boolean;
-    domains: PublicDomain[];
-    blocked_domains?: PublicDomain[];
-  };
 }
 
 export interface ConfigCache {
@@ -62,13 +68,22 @@ export async function fetchPublicConfigByOrgCode(
 ): Promise<ConfigFetchResult> {
   try {
     const url = `${BACKEND_URL}/api/v1/public/orgs/${encodeURIComponent(orgCode)}/config`;
-    const res = await fetch(url, { method: "GET" });
+    const res = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) {
       console.warn("[Blade] Config fetch failed:", res.status);
       if (res.status === 404) return { status: "not_found" };
       return { status: "transient_error" };
     }
-    const data = (await res.json()) as PublicConfig;
+    const data = publicConfigSchema.parse(await res.json());
+    if (
+      data.organization.org_code.trim().toUpperCase() !==
+      orgCode.trim().toUpperCase()
+    ) {
+      return { status: "transient_error" };
+    }
     return {
       status: "ok",
       config: {
@@ -95,6 +110,7 @@ export async function fetchDeviceConfig(
     const res = await fetch(`${BACKEND_URL}/api/v1/devices/me`, {
       method: "GET",
       headers: { [DEVICE_TOKEN_HEADER]: token },
+      signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
       console.warn("[Blade] Device config fetch failed:", res.status);
@@ -103,7 +119,7 @@ export async function fetchDeviceConfig(
       }
       return { status: "transient_error" };
     }
-    const data = (await res.json()) as DeviceSelfConfig;
+    const data = deviceConfigSchema.parse(await res.json());
     return {
       status: "ok",
       config: {

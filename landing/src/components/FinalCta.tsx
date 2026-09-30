@@ -2,6 +2,7 @@ import Button from "./ui/Button";
 import PrimaryCta from "./ui/PrimaryCta";
 import Lottie from "./ui/Lottie";
 import { links } from "@/lib/links";
+import DownloadExtension from "./DownloadExtension";
 
 export default function FinalCta() {
   return (
@@ -17,7 +18,8 @@ export default function FinalCta() {
               audit log.
             </p>
           </div>
-          <div className="flex flex-col tab:flex-row w-full items-center justify-center gap-4 tab:gap-5 overflow-clip">
+          <div className="flex flex-col tab:flex-row tab:flex-wrap w-full items-center justify-center gap-4 tab:gap-5">
+            <DownloadExtension className="w-full max-w-[326px]" />
             <PrimaryCta
               variant="primary"
               size="lg"

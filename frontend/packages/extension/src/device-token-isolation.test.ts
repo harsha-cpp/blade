@@ -93,6 +93,8 @@ describe("device token reach", () => {
 
     expect(readers.sort()).toEqual([
       "./background/credentials.ts",
+      "./background/link-device.ts",
+      "./background/link-org.ts",
       "./popup/index.tsx",
     ]);
   });
@@ -114,7 +116,7 @@ describe("the cached config a content script can read", () => {
             JSON.stringify({
               device: { id: "d1", label: "Ward laptop" },
               organization: { name: "Shape Hospital" },
-              config: { domains: [{ domain: "shapehospital.in" }] },
+              config: { domains: [{ domain: "shapehospital.in", direction: "both", classification: "internal" }] },
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),

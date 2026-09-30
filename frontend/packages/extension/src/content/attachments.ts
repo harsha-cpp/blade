@@ -24,23 +24,27 @@ async function extractTxt(file: File): Promise<string> {
 async function extractPdf(file: File): Promise<string> {
   const lib = await getPdfLib();
   const buffer = await file.arrayBuffer();
-  const doc = await lib.getDocument({
+  const task = lib.getDocument({
     data: new Uint8Array(buffer),
     isEvalSupported: false,
-  } as Parameters<typeof lib.getDocument>[0]).promise;
+  } as Parameters<typeof lib.getDocument>[0]);
+  try {
+    const doc = await task.promise;
 
-  const parts: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const text = await page.getTextContent();
-    const pageText = text.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .filter(Boolean)
-      .join(" ");
-    parts.push(pageText);
+    const parts: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const text = await page.getTextContent();
+      const pageText = text.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .filter(Boolean)
+        .join(" ");
+      parts.push(pageText);
+    }
+    return parts.join("\n");
+  } finally {
+    await task.destroy();
   }
-  await doc.destroy();
-  return parts.join("\n");
 }
 
 export interface AttachmentScanResult {

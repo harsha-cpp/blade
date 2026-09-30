@@ -129,6 +129,23 @@ describe("fetchDeviceConfig", () => {
 });
 
 describe("fetchPublicConfigByOrgCode", () => {
+  it("does not accept a mismatched organization or malformed policy", async () => {
+    for (const body of [
+      {
+        organization: { name: "Other Hospital", org_code: "BLD-OTHER1" },
+        domains: [],
+      },
+      { organization: { name: "Test Hospital", org_code: "BLD-ABC123" } },
+    ]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => jsonResponse(200, body)),
+      );
+      expect((await fetchPublicConfigByOrgCode("BLD-ABC123")).status).toBe(
+        "transient_error",
+      );
+    }
+  });
   it("still resolves by org code with its own cache key", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, {

@@ -26,7 +26,7 @@ export function hardenWebAccessibleResources(
     .map((entry) => ({
       ...entry,
       resources: entry.resources.filter(isNarrowResource),
-      use_dynamic_url: true,
+      use_dynamic_url: false,
     }))
     .filter((entry) => entry.resources.length > 0);
 }

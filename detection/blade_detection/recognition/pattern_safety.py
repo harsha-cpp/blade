@@ -14,7 +14,7 @@ MAX_PATTERN_CHARS: Final[int] = 200
 MAX_PROBE_SECONDS: Final[float] = 0.02
 
 PROBE_UNITS: Final[tuple[str, ...]] = ("a", "0", "A0", "-", " ", "\t")
-PROBE_LENGTHS: Final[tuple[int, ...]] = (12, 18, 24, 64, 128)
+PROBE_LENGTHS: Final[tuple[int, ...]] = (12, 18, 21, 22, 24, 64, 128)
 PROBE_REPEATS: Final[int] = 3
 PROBE_NOISE_FLOOR_SECONDS: Final[float] = 0.00001
 MAX_GROWTH_EXPONENT: Final[float] = 1.5

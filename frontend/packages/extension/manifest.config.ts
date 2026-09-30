@@ -1,10 +1,13 @@
 import { defineManifest } from '@crxjs/vite-plugin';
 import type { BackendTarget } from './src/backend-url';
 import pkg from './package.json' with { type: 'json' };
+import extensionKey from './extension-key.json' with { type: 'json' };
 
 export function buildManifest(backend: BackendTarget) {
   return defineManifest({
     manifest_version: 3,
+    // Keep the unpacked extension ID stable when the download folder changes.
+    key: extensionKey,
     name: 'Blade Healthcare DLP',
     version: pkg.version,
     description: 'Checks outgoing Gmail for patient data before it leaves the hospital.',

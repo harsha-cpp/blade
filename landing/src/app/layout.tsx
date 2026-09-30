@@ -66,6 +66,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       className={`${restartMedium.variable} ${restartRegular.variable} ${protoMono.variable} ${geistPixel.variable}`}
     >
       <body>

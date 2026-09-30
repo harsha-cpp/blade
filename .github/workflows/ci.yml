@@ -115,6 +115,16 @@ jobs:
       - run: cd frontend && pnpm build
         env:
           VITE_BACKEND_URL: https://api.tryblade.in
+      - name: Verify the published extension matches its source
+        run: |
+          python3 scripts/package-extension.py
+          git diff --exit-code -- landing/public/downloads landing/src/lib/extension-release.json
+      - name: Install extension test browser
+        run: cd frontend && pnpm --filter @bladedlp/extension exec playwright install --with-deps chromium
+      - name: Extension end-to-end tests
+        run: |
+          cd landing && npm ci
+          cd ../frontend && pnpm test:e2e
       - run: cd frontend && pnpm audit --prod --audit-level=high
 
   landing:
@@ -159,6 +169,7 @@ jobs:
             -e 's/^MINIO_ROOT_PASSWORD=.*/MINIO_ROOT_PASSWORD=ci-minio-pw/' \
             -e 's/^MFA_ENCRYPTION_KEY=.*/MFA_ENCRYPTION_KEY=ci-not-a-real-secret/' \
             /tmp/ci.env
+          echo 'AUDIT_HMAC_KEY=ci-audit-key-not-a-real-secret-32-characters' >> /tmp/ci.env
           cp backend/.env.example infra/api.env
           docker compose -f infra/docker-compose.prod.yml --env-file /tmp/ci.env config --quiet
           rm -f infra/api.env

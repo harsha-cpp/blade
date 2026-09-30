@@ -330,6 +330,12 @@ def _classify(data: bytes, filename: str, declared_mime: str) -> str | None:
         return signature
 
     sniffed = _detect_mime(data, declared_mime)
+    # libmagic commonly reports RFC822 messages as text/plain on Linux. Parse
+    # the MIME container instead of scanning its encoded attachments as text.
+    if _kind_from_mime(sniffed) == "text" and (
+        _kind_from_mime(declared_mime) == "email" or Path(filename).suffix.lower() == ".eml"
+    ):
+        return "email"
     for mime in (sniffed, declared_mime.lower()):
         kind = _kind_from_mime(mime)
         if kind is not None:

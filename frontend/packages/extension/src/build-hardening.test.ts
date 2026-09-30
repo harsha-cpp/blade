@@ -43,15 +43,15 @@ describe("hardening the generated manifest", () => {
     expect(hardened[0]?.resources).toEqual(["assets/index.js"]);
   });
 
-  it("turns on dynamic urls for every entry", () => {
+  it("keeps static urls so content script imports resolve", () => {
     const hardened = hardenWebAccessibleResources([
       { matches: ["https://mail.google.com/*"], resources: ["assets/a.js"] },
       { matches: ["https://*/*"], resources: ["assets/b.js"] },
     ]);
 
     expect(hardened.map((entry) => entry.use_dynamic_url)).toEqual([
-      true,
-      true,
+      false,
+      false,
     ]);
   });
 
@@ -84,7 +84,7 @@ describe.skipIf(!hasBuild)("the built extension in dist", () => {
 
   it("uses a dynamic url for every entry", () => {
     expect(entries.length).toBeGreaterThan(0);
-    for (const entry of entries) expect(entry.use_dynamic_url).toBe(true);
+    for (const entry of entries) expect(entry.use_dynamic_url).toBe(false);
   });
 
   it("still lets Gmail load the pdf worker it ships", () => {

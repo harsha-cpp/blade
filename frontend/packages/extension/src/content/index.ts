@@ -1,4 +1,5 @@
 import { mountWarningModal } from "../modal/mount";
+import { requestOrgLink } from "../org-link";
 import {
   attachmentUploadResultSchema,
   type AttachmentUploadResult,
@@ -125,7 +126,7 @@ async function loadOrgState(): Promise<void> {
     "blade_config",
   ]);
   orgCode =
-    (result.blade_org_code as string | undefined)?.trim().toUpperCase() ?? null;
+    (result.blade_org_code as string | undefined)?.trim().toUpperCase() || null;
   policy = buildPolicy(
     orgCode,
     result.blade_config as CachedConfig | undefined,
@@ -141,7 +142,7 @@ function onStoredStateChanged(
     orgCode =
       (changes.blade_org_code.newValue as string | undefined)
         ?.trim()
-        .toUpperCase() ?? null;
+        .toUpperCase() || null;
     policy = emptyPolicy();
     void loadOrgState();
   }
@@ -151,6 +152,7 @@ function onStoredStateChanged(
       changes.blade_config.newValue as CachedConfig | undefined,
     );
   }
+  if (isLinked()) document.getElementById("blade-org-banner")?.remove();
 }
 
 function styled<K extends keyof HTMLElementTagNameMap>(
@@ -217,7 +219,9 @@ function showOrgCodeBanner(): void {
   submit.type = "button";
   submit.textContent = "Link organization";
 
-  banner.append(header, description, input, submit);
+  const error = styled("div", `color:${p.stop};font-size:12px;`);
+  error.setAttribute("role", "alert");
+  banner.append(header, description, input, submit, error);
   document.body.appendChild(banner);
 
   input.addEventListener("focus", () => {
@@ -227,16 +231,23 @@ function showOrgCodeBanner(): void {
     input.style.borderColor = p.ruleStrong;
   });
 
-  submit.addEventListener("click", () => {
+  submit.addEventListener("click", async () => {
+    if (submit.disabled) return;
     const code = input.value.trim().toUpperCase();
     if (code.length < 4) {
       input.style.borderColor = p.stop;
       input.focus();
       return;
     }
-    void chrome.storage.local
-      .set({ blade_org_code: code, blade_org_skipped: false })
-      .then(() => banner.remove());
+    submit.disabled = true;
+    submit.textContent = "Checking…";
+    const result = await requestOrgLink(code);
+    if (result.ok) banner.remove();
+    else {
+      error.textContent = result.message;
+      submit.disabled = false;
+      submit.textContent = "Link organization";
+    }
   });
 
   skip.addEventListener("click", () => {
@@ -254,7 +265,7 @@ async function maybeShowOrgBanner(): Promise<void> {
   if (isLinked()) return;
   const result = await chrome.storage.local.get("blade_org_skipped");
   if (result.blade_org_skipped) return;
-  setTimeout(showOrgCodeBanner, 1500);
+  setTimeout(() => { if (!isLinked()) showOrgCodeBanner(); }, 1500);
 }
 
 function reportContextLoss(err: unknown): void {

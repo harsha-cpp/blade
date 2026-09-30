@@ -3,6 +3,7 @@ import Button from "./ui/Button";
 import PrimaryCta from "./ui/PrimaryCta";
 import Reveal from "./ui/Reveal";
 import { links } from "@/lib/links";
+import DownloadExtension from "./DownloadExtension";
 
 export default function Hero() {
   return (
@@ -37,6 +38,7 @@ export default function Hero() {
         ease="var(--ease-framer)"
         className="flex w-full flex-col items-start gap-3 tab:flex-row tab:gap-4"
       >
+        <DownloadExtension className="w-full tab:w-auto" />
         <PrimaryCta
           variant="primary"
           size="sm"
