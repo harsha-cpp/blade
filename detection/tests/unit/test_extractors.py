@@ -25,6 +25,19 @@ from blade_detection.models import Attachment, EmailPayload
 PHI_LINE = "Patient Ramesh Kumar Iyer, UHID 0024518, diagnosis E11.9"
 
 
+@pytest.mark.parametrize("sniffed", ["text/plain", "text/html"])
+def test_email_container_is_parsed_when_libmagic_reports_a_text_type(
+    monkeypatch: pytest.MonkeyPatch, sniffed: str
+) -> None:
+    monkeypatch.setattr("blade_detection.extractors._detect_mime", lambda *_: sniffed)
+    message = EmailMessage()
+    message.set_content("Plain part: UHID 0024518 for the patient.")
+    message.add_alternative("<p>Rich part: UHID 0099887 for the patient.</p>", subtype="html")
+    result = extract_bytes(bytes(message), "note.eml", "message/rfc822", "a1")
+    assert "0024518" in result.text
+    assert "0099887" not in result.text
+
+
 def _fitz() -> Any:
     return cast(Any, import_module("fitz"))
 

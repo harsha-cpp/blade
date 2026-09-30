@@ -15,7 +15,7 @@ const root = resolve(import.meta.dirname, "../../../../..");
 const release = JSON.parse(
   await readFile(join(root, "landing/src/lib/extension-release.json"), "utf8"),
 );
-const website = "http://127.0.0.1:3100";
+const website = process.env["BLADE_LANDING_URL"] ?? "http://127.0.0.1:3100";
 
 async function launch(
   profile: string,
