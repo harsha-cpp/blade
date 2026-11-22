@@ -1,8 +1,8 @@
 {
-  "version": "0.3.1",
-  "filename": "blade-extension-0.3.1.zip",
-  "downloadPath": "/downloads/blade-extension-0.3.1.zip",
-  "bytes": 5108301,
-  "sha256": "9d50729918fbf89b2d3270acd6c86e75acc9238626f440945876c440e04e7298",
+  "version": "0.3.2",
+  "filename": "blade-extension-0.3.2.zip",
+  "downloadPath": "/downloads/blade-extension-0.3.2.zip",
+  "bytes": 5109407,
+  "sha256": "afe6acf83abf8741d5a64df194c7db57231025dfaa7f5327e372043053023b2b",
   "backendUrl": "https://api.tryblade.in"
 }

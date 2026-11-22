@@ -356,6 +356,27 @@ test("website attachments are checked before a picker, drop or paste upload reac
 
     const page = await context.newPage();
     await page.goto(testSite);
+    const worker =
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent("serviceworker"));
+    await expect
+      .poll(() =>
+        worker.evaluate(async () => {
+          const [tab] = await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+          });
+          if (tab?.id === undefined) return null;
+          return chrome.tabs
+            .sendMessage(
+              tab.id,
+              { type: "BLADE_TAB_PROTECTION" },
+              { frameId: 0 },
+            )
+            .catch(() => null);
+        }),
+      )
+      .toEqual({ guard: "website", version: release.version });
     const input = page.getByLabel("Attach files");
     const notice = page.locator("[data-blade-attachment-protection]");
     const file = (name: string, text: string) => ({
@@ -365,7 +386,13 @@ test("website attachments are checked before a picker, drop or paste upload reac
     });
     await input.setInputFiles([
       file("ordinary.txt", "Team lunch on Wednesday"),
-      file("patient.txt", "Patient MRN: 4471902"),
+      {
+        name: "01-discharge-summary.txt",
+        mimeType: "text/plain",
+        buffer: await readFile(
+          join(root, "demo/samples/01-discharge-summary.txt"),
+        ),
+      },
     ]);
     await expect(notice).toHaveAttribute(
       "data-blade-attachment-protection",

@@ -7,6 +7,7 @@ import {
 } from "@bladedlp/shared";
 import { detectPhi, type PhiHit } from "./phi";
 import { fetchAttachmentRefs, scanAttachments } from "./attachments";
+import { announceTabGuard } from "../tab-protection";
 import {
   ComposeReadError,
   extractComposeData,
@@ -1089,4 +1090,7 @@ function startGmailGuard(): void {
   observeComposeWindows();
 }
 
-if (claimInjection(GMAIL_GUARD_MARKER)) startGmailGuard();
+if (claimInjection(GMAIL_GUARD_MARKER)) {
+  startGmailGuard();
+  announceTabGuard("gmail");
+}

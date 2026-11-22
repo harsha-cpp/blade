@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState, useCallback, useRef } from "react";
 import { isConfigFresh } from "../config-freshness";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { TabProtection } from "./TabProtection";
 import { requestOrgLink, normalizeOrgCode } from "../org-link";
 import type { DeviceLinkResult } from "../background/link-device";
 import {
@@ -192,6 +193,7 @@ function Popup() {
       </div>
 
       <div className="popup-body">
+        <TabProtection />
         <div
           className={`status-card${
             status.state === "protected" ? "" : " is-unlinked"

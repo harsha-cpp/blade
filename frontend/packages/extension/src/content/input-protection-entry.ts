@@ -6,6 +6,7 @@ import {
 import { WEB_BLOCK_MESSAGE, type WebBlockReport } from "../web-block";
 import { claimInjection, WEB_GUARD_MARKER } from "./injection-marker";
 import { installWebAttachmentProtection } from "./web-attachment-protection";
+import { announceTabGuard } from "../tab-protection";
 
 const INSPECTION_LIMIT_SEVERITY = "medium";
 
@@ -35,4 +36,5 @@ function report(decision: InputProtectionDecision): void {
 if (claimInjection(WEB_GUARD_MARKER)) {
   installInputProtection({ onBlocked: report });
   installWebAttachmentProtection(report);
+  announceTabGuard("website");
 }

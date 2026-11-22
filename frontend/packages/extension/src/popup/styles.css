@@ -147,6 +147,10 @@ body {
   margin-top: 2px;
 }
 
+.tab-refresh-button {
+  margin-top: 8px;
+}
+
 .settings-title {
   font-family: var(--font-mono);
   font-size: 11.5px;
