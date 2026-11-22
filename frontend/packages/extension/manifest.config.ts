@@ -10,7 +10,7 @@ export function buildManifest(backend: BackendTarget) {
     key: extensionKey,
     name: 'Blade Healthcare DLP',
     version: pkg.version,
-    description: 'Checks outgoing Gmail for patient data before it leaves the hospital.',
+    description: 'Checks outgoing Gmail, web input, and website attachments for patient data.',
     minimum_chrome_version: '120',
     icons: {
       '16': 'icons/icon-16.png',
@@ -42,7 +42,7 @@ export function buildManifest(backend: BackendTarget) {
         match_about_blank: true,
       },
     ],
-    permissions: ['storage', 'alarms', 'scripting'],
+    permissions: ['storage', 'alarms', 'scripting', 'offscreen'],
     host_permissions: ['https://mail.google.com/*', backend.hostPermission],
     web_accessible_resources: [
       {

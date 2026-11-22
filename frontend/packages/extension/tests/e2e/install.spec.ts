@@ -317,3 +317,220 @@ test("production organization links in the published extension and survives Chro
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("website attachments are checked before a picker, drop or paste upload reaches the page", async ({}) => {
+  test.setTimeout(90_000);
+  const directory = await mkdtemp(join(tmpdir(), "blade-web-upload-"));
+  execFileSync("unzip", [
+    "-q",
+    join(root, `landing/public${release.downloadPath}`),
+    "-d",
+    directory,
+  ]);
+  const context = await launch(
+    join(directory, "profile"),
+    join(directory, "blade-extension"),
+  );
+  const received: string[] = [];
+  const testSite = "https://blade-upload.example";
+  try {
+    await context.route(`${testSite}/**`, async (route) => {
+      if (route.request().method() === "POST") {
+        const name = new URL(route.request().url()).searchParams.get("file");
+        if (name) received.push(name);
+        return route.fulfill({ status: 204 });
+      }
+      await route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><input type="file" multiple aria-label="Attach files"><textarea aria-label="Prompt"></textarea>
+          <script>
+            const upload = (files) => {
+              for (const file of files) void fetch('/upload?file=' + encodeURIComponent(file.name), {method: 'POST', body: file});
+            };
+            document.querySelector('input').addEventListener('input', (event) => upload(event.target.files));
+            document.addEventListener('drop', (event) => { event.preventDefault(); upload(event.dataTransfer.files); });
+            document.addEventListener('paste', (event) => { event.preventDefault(); upload(event.clipboardData.files); });
+          </script>`,
+      });
+    });
+
+    const page = await context.newPage();
+    await page.goto(testSite);
+    const input = page.getByLabel("Attach files");
+    const notice = page.locator("[data-blade-attachment-protection]");
+    const file = (name: string, text: string) => ({
+      name,
+      mimeType: "text/plain",
+      buffer: Buffer.from(text),
+    });
+    await input.setInputFiles([
+      file("ordinary.txt", "Team lunch on Wednesday"),
+      file("patient.txt", "Patient MRN: 4471902"),
+    ]);
+    await expect(notice).toHaveAttribute(
+      "data-blade-attachment-protection",
+      "sensitive",
+    );
+    await expect(input).toHaveValue("");
+    expect(received).toEqual([]);
+
+    await input.setInputFiles(
+      file("clean-picker.txt", "Team lunch on Wednesday"),
+    );
+    await expect.poll(() => received).toEqual(["clean-picker.txt"]);
+
+    // A PDF with a patient identifier in its text layer, independent of OCR.
+    const pdfParts = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 300] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ];
+    const stream = "BT /F1 24 Tf 20 200 Td (Patient MRN: 4471902) Tj ET\n";
+    pdfParts.push(`<< /Length ${stream.length} >>\nstream\n${stream}endstream`);
+    let pdf = "%PDF-1.4\n";
+    const offsets = pdfParts.map((part, index) => {
+      const offset = pdf.length;
+      pdf += `${index + 1} 0 obj\n${part}\nendobj\n`;
+      return offset;
+    });
+    const xref = pdf.length;
+    pdf += `xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    await input.setInputFiles({
+      name: "patient.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from(pdf),
+    });
+    await expect(notice).toHaveAttribute(
+      "data-blade-attachment-protection",
+      "sensitive",
+    );
+
+    const transfer = async (
+      kind: "drop" | "paste",
+      name: string,
+      text: string,
+      image = false,
+    ) => {
+      await page.getByLabel("Prompt").evaluate(
+        async (target, payload) => {
+          const data = new DataTransfer();
+          let contents: Blob | string = payload.text;
+          if (payload.image) {
+            const canvas = document.createElement("canvas");
+            canvas.width = 1300;
+            canvas.height = 280;
+            const drawing = canvas.getContext("2d")!;
+            drawing.fillStyle = "white";
+            drawing.fillRect(0, 0, canvas.width, canvas.height);
+            drawing.fillStyle = "black";
+            drawing.font = "64px sans-serif";
+            drawing.fillText(payload.text, 40, 150);
+            contents = await new Promise<Blob>((resolve) =>
+              canvas.toBlob((blob) => resolve(blob!)),
+            );
+          }
+          data.items.add(
+            new File([contents], payload.name, {
+              type: payload.image ? "image/png" : "text/plain",
+            }),
+          );
+          const options = { bubbles: true, cancelable: true, composed: true };
+          target.dispatchEvent(
+            payload.kind === "drop"
+              ? new DragEvent("drop", { ...options, dataTransfer: data })
+              : new ClipboardEvent("paste", {
+                  ...options,
+                  clipboardData: data,
+                }),
+          );
+        },
+        { kind, name, text, image },
+      );
+    };
+
+    await transfer("drop", "patient-drop.txt", "Patient MRN: 4471902");
+    await expect(notice).toHaveAttribute(
+      "data-blade-attachment-protection",
+      "sensitive",
+    );
+    await transfer("drop", "clean-drop.txt", "A morning meeting");
+    await expect
+      .poll(() => received)
+      .toEqual(["clean-picker.txt", "clean-drop.txt"]);
+
+    await transfer("paste", "patient-image.png", "PATIENT MRN: 4471902", true);
+    await expect(notice).toHaveAttribute(
+      "data-blade-attachment-protection",
+      "sensitive",
+      { timeout: 25_000 },
+    );
+    await transfer("paste", "clean-image.png", "Ordinary project notes", true);
+    await expect
+      .poll(() => received, { timeout: 25_000 })
+      .toEqual(["clean-picker.txt", "clean-drop.txt", "clean-image.png"]);
+
+    await input.setInputFiles(
+      file("unsupported.docx", "This file is not supported by the web scanner"),
+    );
+    await expect(notice).toHaveAttribute(
+      "data-blade-attachment-protection",
+      "unsupported",
+    );
+    expect(received).toEqual([
+      "clean-picker.txt",
+      "clean-drop.txt",
+      "clean-image.png",
+    ]);
+
+    const pdfPage = await context.newPage();
+    try {
+      for (const [name, phrase, sensitive] of [
+        ["patient-scan.pdf", "PATIENT MRN: 4471902", true],
+        ["clean-scan.pdf", "Ordinary project notes", false],
+      ] as const) {
+        await pdfPage.setContent(
+          '<canvas width="1300" height="280" style="width:570px"></canvas>',
+        );
+        await pdfPage
+          .locator("canvas")
+          .evaluate((canvas: HTMLCanvasElement, text) => {
+            const ctx = canvas.getContext("2d")!;
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "black";
+            ctx.font = "74px sans-serif";
+            ctx.fillText(text, 40, 150);
+          }, phrase);
+        // Chromium prints the canvas as an image with no selectable text.
+        const buffer = await pdfPage.pdf({ format: "A4" });
+        await input.setInputFiles({
+          name,
+          mimeType: "application/pdf",
+          buffer,
+        });
+        if (sensitive) {
+          await expect(notice).toHaveAttribute(
+            "data-blade-attachment-protection",
+            "sensitive",
+            { timeout: 25_000 },
+          );
+        } else {
+          await expect
+            .poll(() => received, { timeout: 25_000 })
+            .toEqual([
+              "clean-picker.txt",
+              "clean-drop.txt",
+              "clean-image.png",
+              name,
+            ]);
+        }
+      }
+    } finally {
+      await pdfPage.close();
+    }
+  } finally {
+    await context.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

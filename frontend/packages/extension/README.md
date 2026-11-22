@@ -5,7 +5,17 @@ One MV3 extension with two independent content scripts and one service worker.
 | Script | Matches | Runs | Decides |
 |---|---|---|---|
 | `src/content/index.ts` | `https://mail.google.com/*` | `document_idle`, top frame only | Server-side. Falls back to the local rule pack when the backend is unreachable. |
-| `src/content/input-protection-entry.ts` | `http://*/*` and `https://*/*`, `exclude_matches` `https://mail.google.com/*` | `document_start`, all frames, `match_about_blank` | Locally and synchronously. No network call in the keystroke path. |
+| `src/content/input-protection-entry.ts` | `http://*/*` and `https://*/*`, `exclude_matches` `https://mail.google.com/*` | `document_start`, all frames, `match_about_blank` | Text checks run locally and synchronously. Attachment checks run locally before upload. |
+
+On non-Gmail sites, Blade holds browser file picker, file drop, and clipboard file
+events until the whole selection passes a local scan. It supports UTF-8 text,
+PDFs, and still PNG, JPEG, and WebP images. Image text is read with the bundled
+English Tesseract model, including rendered PDF pages. Files that are unreadable,
+unsupported, beyond 10 MiB per file or 20 MiB per selection, or over 12 PDF pages
+are blocked. Files and extracted text stay inside the browser. The existing audit
+path can report masked findings for sensitive files blocked on trusted events.
+The guard covers files provided through browser events. Files selected from a
+site's cloud storage integration do not pass through those events.
 
 `src/background/index.ts` is the service worker. It caches the organization
 config and relays web-input blocks to the backend.

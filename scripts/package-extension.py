@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import zipfile
 
@@ -13,12 +14,25 @@ BACKEND = 'https://api.tryblade.in'
 env = {**os.environ, 'VITE_BACKEND_URL': BACKEND}
 subprocess.run(['pnpm', '--filter', '@bladedlp/extension', 'build'], cwd=ROOT / 'frontend', env=env, check=True)
 dist = EXTENSION / 'dist'
+licenses = dist / 'licenses'
+licenses.mkdir(exist_ok=True)
+for dependency, license_file in (
+    ('pdfjs-dist', 'LICENSE'),
+    ('tesseract.js', 'LICENSE.md'),
+    ('tesseract.js-core', 'LICENSE'),
+):
+    shutil.copyfile(EXTENSION / 'node_modules' / dependency / license_file,
+                    licenses / f'{dependency}.txt')
+shutil.copyfile(EXTENSION / 'node_modules/tesseract.js/dist/worker.min.js.LICENSE.txt',
+                licenses / 'tesseract-worker.txt')
 manifest = json.loads((dist / 'manifest.json').read_text())
 assert manifest['manifest_version'] == 3
 assert manifest['key'], 'A stable extension ID is required'
 assert manifest['host_permissions'] == ['https://mail.google.com/*', BACKEND + '/*']
 assert 'localhost' not in json.dumps(manifest)
 assert manifest['version'] == json.loads((EXTENSION / 'package.json').read_text())['version']
+assert (dist / 'src/offscreen/index.html').is_file(), 'Missing attachment scanner'
+assert (dist / 'ocr/eng.traineddata.gz').is_file(), 'Missing packaged OCR data'
 files = sorted(path for path in dist.rglob('*') if path.is_file())
 for path in files:
     relative = path.relative_to(dist)

@@ -25,6 +25,8 @@ import { linkOrganization } from "./link-org";
 import { isConfigFresh } from "../config-freshness";
 import { serializeCredentialTask } from "./credential-tasks";
 import { linkDevice } from "./link-device";
+import { CHECK_WEB_ATTACHMENT, hasAttachmentPayload } from "../web-attachment";
+import { checkWebAttachment } from "./web-attachment";
 
 const REFRESH_ALARM = "blade-config-refresh";
 
@@ -175,6 +177,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const report = webBlockGate.admit(message, sender);
     const done = report ? reportWebBlock(report) : Promise.resolve();
     void done.then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === CHECK_WEB_ATTACHMENT) {
+    if (sender.tab?.id === undefined || !hasAttachmentPayload(message)) return false;
+    void checkWebAttachment(message).then(sendResponse);
     return true;
   }
   const backendRequest = parseBackendRequest(message);

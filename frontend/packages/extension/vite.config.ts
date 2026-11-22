@@ -2,6 +2,7 @@
 import { defineConfig, loadEnv } from "vite";
 import { crx } from "@crxjs/vite-plugin";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { buildManifest } from "./manifest.config";
 import { hardenDist } from "./build-hardening";
 import { resolveBackendTarget } from "./src/backend-url";
@@ -22,7 +23,17 @@ export default defineConfig(({ mode }) => {
       target: "chrome120",
       sourcemap: mode === "production" ? false : "hidden",
       rollupOptions: {
+        input: {
+          scanner: fileURLToPath(
+            new URL("./src/offscreen/index.html", import.meta.url),
+          ),
+        },
         output: {
+          // Tesseract requests the language model by its exact filename.
+          assetFileNames: (asset) =>
+            asset.names.includes("eng.traineddata.gz")
+              ? "ocr/eng.traineddata.gz"
+              : "assets/[name]-[hash][extname]",
           manualChunks: {
             react: ["react", "react-dom"],
           },

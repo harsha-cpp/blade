@@ -5,6 +5,7 @@ import {
 } from "./input-protection";
 import { WEB_BLOCK_MESSAGE, type WebBlockReport } from "../web-block";
 import { claimInjection, WEB_GUARD_MARKER } from "./injection-marker";
+import { installWebAttachmentProtection } from "./web-attachment-protection";
 
 const INSPECTION_LIMIT_SEVERITY = "medium";
 
@@ -31,5 +32,7 @@ function report(decision: InputProtectionDecision): void {
   void chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-if (claimInjection(WEB_GUARD_MARKER))
+if (claimInjection(WEB_GUARD_MARKER)) {
   installInputProtection({ onBlocked: report });
+  installWebAttachmentProtection(report);
+}

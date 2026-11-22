@@ -17,8 +17,13 @@ describe("extension manifest", () => {
     expect(manifest.permissions).toContain("scripting");
   });
 
-  it("keeps the permission set otherwise unchanged", () => {
-    expect(manifest.permissions).toEqual(["storage", "alarms", "scripting"]);
+  it("allows the extension to run OCR in an offscreen document", () => {
+    expect(manifest.permissions).toEqual([
+      "storage",
+      "alarms",
+      "scripting",
+      "offscreen",
+    ]);
   });
 
   it("does not widen host permissions to get there", () => {
